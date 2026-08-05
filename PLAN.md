@@ -33,7 +33,8 @@ A single `<script>` tag on any HTML page mounts a floating "orb" agent that:
 | LLM access | Small backend proxy holds the API key; browser never sees it. |
 | Provider | **Extensible provider pattern**; first impl = OpenAI-compatible (OpenAI, OpenRouter, Replicate-compat, Groq, …). |
 | Streaming | Streamed responses via SSE (token-by-token). |
-| Bidirectionality | Open SSE channel carries both streamed tokens **and** server-initiated messages. |
+| Bidirectionality | SSE channel carries **streamed tokens** (one-way server → client). Server-initiated push is **out of MVP** (reactive autonomy; see §3.2). |
+| Abuse protection | Origin allowlist + per-IP rate limit + daily budget cap; no `/api/push` (see §3.2.1). |
 | Autonomy | **Context-aware reactive** — uses page context and acts when engaged; does not initiate unprompted (greeting on open is fine). |
 | Actions (MVP) | `scrollTo`, `highlight`, `navigate` (same-origin), `move` (self), `say` — all sandboxed. |
 | Body | Expressive SVG **orb/face** with expression states (idle/thinking/speaking/looking/done) and eyes that orient toward the action target. |
@@ -80,12 +81,36 @@ Client → server uses `POST`:
 
 - `POST /api/chat { sessionId, history[], message, pageContext }` → 202; the
   LLM response streams back down the SSE channel.
-- `POST /api/push { sessionId, message }` → emits a proactive message down the
-  stream (the "assistant initiates" capability; used for the greeting).
 
 > The backend is **stateless regarding conversation history** (the client sends
 > full history each turn). The only server state is the `sessionId → open SSE
-> stream` map, needed so the server can push messages.
+> stream` map.
+
+> **No `/api/push` in MVP.** Autonomy is reactive (§2), so the server never
+> initiates. The **greeting is client-rendered**: on first open with empty
+> history the widget shows `GREETING_TEXT` locally as the first assistant
+> message — no LLM call, no latency, no push channel to secure. (Server-initiated
+> push is a deliberate phase-2 capability, with real auth.)
+
+#### 3.2.1 Abuse protection & trust (MVP)
+
+- **Origin allowlist** (`ALLOWED_ORIGINS`) — the legitimate-host gate; CORS
+  stops browser-based cross-origin abuse.
+- **Per-IP rate limit** on `/api/chat` — default **30 messages/min/IP**, in-memory,
+  configurable. Counts chat *turns* (POSTs), not tokens. Exceeded → `429`.
+- **Daily budget cap** — server-side, hard-stop new requests when the day's
+  provider spend exceeds the cap (default **$5/day**, configurable). Exceeded →
+  `503` (disabled; resets daily). Measure spend from the provider's usage in the
+  final streaming chunk (`stream_options.include_usage`) when available, else
+  estimate tokens.
+- **No site token** for MVP (defense-in-depth, deferred).
+- **`sessionId` trust** — client-generated UUIDv4, blindly keying the `sessions`
+  map (acceptable for MVP). Residual risk: a same-origin script that can read
+  `localStorage` can impersonate (the pre-existing XSS caveat, §3.6); the daily
+  cap is the backstop. Server-issued `httpOnly` cookie binding deferred to phase 2.
+- Caveats: in-memory rate-limit state is **single-instance** (multi-instance
+  needs a shared store like Redis — deployment-dependent); per-IP has the usual
+  CGNAT/IPv6 caveats.
 
 ### 3.3 Perception (client → server context)
 
@@ -250,6 +275,10 @@ type ServerEvent =
 PORT=8787
 ALLOWED_ORIGINS=https://example.com,http://localhost:5173
 
+# Abuse protection (ticket 03)
+RATE_LIMIT_PER_IP_PER_MIN=30
+BUDGET_CAP_DAILY_USD=5
+
 # Provider (OpenAI-compatible by default)
 PROVIDER=openai-compatible
 LLM_BASE_URL=https://openrouter.ai/api/v1
@@ -288,13 +317,14 @@ GREETING_TEXT=Hi! I'm the site assistant — ask me anything.
 - Page perception (sections, current section) injected into context.
 - Sandboxed actions: `scrollTo`, `highlight`, `navigate` (same-origin), `move`, `say`.
 - Expressive SVG orb with reaction states; glides to guide; idle bob.
-- Backend proxy: SSE + chat + push, CORS allowlist, OPTIONS handling.
+- Backend proxy: SSE + chat, CORS allowlist + OPTIONS, per-IP rate limit, daily budget cap (no `/api/push` in MVP).
 - localStorage memory: single-origin, indefinite, rolling cap, multi-tab sync.
 - Greeting on open (gated to empty history); "Clear chat" control.
 - README with embed snippet + "add a provider" guide.
 
 ### Out of scope (future)
 - Proactive observer / unprompted initiation beyond greeting.
+- Server-initiated push channel (`/api/push`) and per-user / cookie-bound sessions — phase 2.
 - Free-roaming wander; full rigged mascot character.
 - RAG / chunking over large knowledge (currently injected wholesale).
 - Backend-side persistence / cross-device & cross-origin memory.

@@ -19,3 +19,5 @@ Tighten `shared/types.ts` (`PLAN.md` §5) semantics. Sub-questions:
   it, or repurpose, depending on who parses actions.
 
 PLAN ref: §5.
+
+> **Cross-ref (from [ticket 03](./03-backend-trust-and-abuse-model.md)):** `/api/push` is removed, so the `ServerEvent` `message` type's "server-initiated" use-case is gone — only *complete* assistant messages remain, and there is no push endpoint. The `429` (rate-limited) / `503` (budget-exceeded) abuse-protection responses also need representing in the client error model.

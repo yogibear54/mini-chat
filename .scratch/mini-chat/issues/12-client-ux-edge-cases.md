@@ -18,3 +18,5 @@ Decide the non-happy-path client UX. Sub-questions:
   `data-*` attributes — which wins when they conflict?
 
 PLAN refs: §3.1, §6.
+
+> **Cross-ref (from [ticket 03](./03-backend-trust-and-abuse-model.md)):** error UX must cover the abuse-protection states: `429` (per-IP rate limited) and `503` (daily budget cap exceeded / backend disabled).

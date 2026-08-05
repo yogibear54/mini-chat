@@ -31,6 +31,7 @@ a coding agent can implement it with zero silent assumptions. The map produces
 
 - [SSE & streaming facts](issues/01-sse-and-streaming-facts.md) — EventSource is GET-only (no headers/body): auth must be a query param/cookie; CORS allowlist is the only native transport gate; auto-reconnect is free, Last-Event-ID replay needs server buffering; keepalive pings needed; upstream format is `data:{…}` chunks + `data: [DONE]`.
 - [Client markdown sanitization options](issues/02-client-markdown-sanitization.md) — react-markdown is safe-by-default (no raw HTML unless rehype-raw); recommended react-markdown + rehype-sanitize; marked+DOMPurify is the lighter alternative; Shadow DOM doesn't replace sanitization.
+- [Backend trust & abuse model](issues/03-backend-trust-and-abuse-model.md) — greeting is client-rendered static (no LLM); `/api/push` removed from MVP (reactive autonomy); abuse gate = Origin allowlist + per-IP rate limit (30/min) + daily budget cap ($5), site token off; `sessionId` = client UUIDv4 trusted as-is (cookie-binding deferred to phase 2).
 
 ## Not yet specified
 

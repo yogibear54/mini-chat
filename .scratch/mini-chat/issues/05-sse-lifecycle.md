@@ -23,3 +23,5 @@ Pin down the client + server SSE lifecycle using the facts from
   and confirm MVP accepts that loss (backend queue is out of scope).
 
 PLAN refs: §3.2, §3.6.
+
+> **Cross-ref (from [ticket 03](./03-backend-trust-and-abuse-model.md)):** `/api/push` is removed from MVP — the SSE channel carries only streamed tokens for `/api/chat` responses (no server-initiated messages). The greeting is client-rendered, not pushed.
