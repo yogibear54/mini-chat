@@ -75,7 +75,7 @@ One persistent SSE connection per widget instance is the single transport for
 **all server → client** traffic:
 
 - `GET /api/sse?sessionId=X` → persistent stream. Server validates origin
-  (CORS), registers the stream in a `sessions` map.
+  (CORS), adds the stream to a `sessions` map (`sessionId → Set<streams>`; §3.2.2).
 
 Client → server uses `POST`:
 
@@ -112,6 +112,33 @@ Client → server uses `POST`:
   needs a shared store like Redis — deployment-dependent); per-IP has the usual
   CGNAT/IPv6 caveats.
 
+#### 3.2.2 SSE lifecycle
+
+- **`sessionId`** — generated client-side (`crypto.randomUUID()`) before first
+  connect; stored in `localStorage` under `mini-chat:{agentId}`; **rotated to a
+  fresh UUID on "Clear chat."** The server is stateless on history; the browser
+  owns the id.
+- **Reconnect — no buffering/replay.** Rely on native `EventSource` auto-reconnect
+  (~3 s via `retry:`). **No server-side buffer, no `Last-Event-ID` replay** (the
+  server is memoryless by design). A drop **mid-answer loses that answer**; the
+  client shows a **retry affordance** (no silent auto-resend — avoids
+  double-spend; UX in ticket 12). When a stream closes mid-turn, the server
+  **aborts the upstream LLM fetch** so tokens aren't spent with no reader.
+- **Keepalive** — the server emits a comment-line ping (`: ping`) every **15 s**;
+  a client watchdog redials (`close()` + new `EventSource`) if it hears nothing
+  for **35 s** (>2× ping — tolerates one missed ping, catches silent death from
+  middlemen like CDNs/load balancers that native auto-reconnect can't detect).
+- **Multi-tab — fan-out (not last-wins).** The server keeps
+  `sessionId → Set<streams>` and streams each reply to **every** open tab.
+  (Last-wins was rejected: a quiet tab's watchdog would redial and steal the live
+  stream, ping-ponging the "mic" between tabs forever. Fan-out removes the
+  orphaned-tab problem.) Concurrent message-typing across tabs is a *write*
+  conflict, owned by ticket 08 / §3.6.
+- **Navigation gap** — full navigation drops the SSE; the new page rehydrates the
+  same `sessionId` + history from `localStorage` and reconnects, so the
+  conversation survives. Words streamed during the exact moment of navigation
+  are lost (same as a mid-answer drop); accepted for MVP — **no server-side queue.**
+
 ### 3.3 Perception (client → server context)
 
 A `perception` module reads the host page (the widget shares the page's DOM/JS
@@ -127,11 +154,32 @@ context because it's injected into the page, **not** an iframe):
 > This is why the widget must inject into the page (Shadow DOM for style
 > isolation) rather than use an iframe — an iframe cannot read the parent page.
 
-### 3.4 Action protocol (server → client)
+### 3.4 Action protocol (parsed client-side)
 
-The LLM emits **fenced `json-action` blocks** in its stream. The client streams
-prose to the chat bubble, scans the accumulating buffer for complete action
-blocks, and dispatches them to a **sandboxed executor**.
+The LLM emits **fenced `json-action` blocks** interleaved with its prose. The
+backend is a **dumb pass-through** — it forwards every upstream token on the SSE
+`token` channel and does **not** parse content. The **client** scans the
+accumulating token buffer for complete action blocks, **suppresses them from the
+rendered message**, and dispatches each parsed action to the **sandboxed
+executor**. (The server doesn't parse actions: the sandbox is a client concern,
+since only the client knows the host page.)
+
+**Block contract:**
+
+- A block opens with a fence whose info string is exactly `json-action`
+  (a line of three backticks + `json-action`, case-sensitive) and closes at the
+  next bare three-backtick line (CommonMark fenced-code rules).
+- **One `Action` object per block**; multiple blocks allowed, executed in
+  document order.
+- A block is *complete* when its closing fence arrives → parse then.
+- **Safety boundary:** *only* `json-action`-tagged fences are executed. Every
+  other code fence (plain, or tagged `json`, `js`, …) renders as normal code and
+  is **never** executed.
+- Actions fire **on block-complete** (mid-stream, in order), not deferred to
+  end-of-message.
+- **Malformed / partial:** invalid JSON or an unclosed fence → discard +
+  `console.warn`; never shown. UI silent (no toast). A parsed-but-invalid action
+  (bad shape / unknown type) is rejected by the executor (§3.4 Safety / ticket 07).
 
 Action vocabulary (MVP allowlist):
 
@@ -140,7 +188,7 @@ Action vocabulary (MVP allowlist):
 { "action": "highlight",  "selector": "#plans" }
 { "action": "navigate",   "path": "/about" }                // same-origin only
 { "action": "move",       "near": "pricing" }               // sectionId | selector | corner | coords
-{ "action": "say",        "text": "Hi! Need help?" }        // greeting / proactive line
+{ "action": "say",        "text": "Hi! Need help?" }        // short utterance (purpose under review — greeting is now static)
 ```
 
 **Safety (enforced by the executor):**
@@ -180,11 +228,12 @@ Action vocabulary (MVP allowlist):
 - ~5MB limit → rolling cap (last ~100 messages / ~100KB; drop oldest).
 - Private mode / disabled storage → try/catch → in-memory fallback.
 - Corrupt data → validate JSON shape → reset if invalid.
-- Multi-tab → `storage` event keeps history in sync across tabs (live SSE push
-  channel binds to the most-recently-connected tab — known MVP limitation).
-- Navigation gap → on a full page reload the SSE connection drops and
-  reconnects; any proactive push sent during that gap is lost without a backend
-  queue (phase 2).
+- Multi-tab → the SSE reply **fans out to all open tabs** (§3.2.2); the
+  `storage` event keeps persisted history in sync. Concurrent message-typing
+  across tabs is a write conflict (ticket 08).
+- Navigation gap → on a full page reload the SSE drops and reconnects with the
+  same `sessionId`; the conversation survives via `localStorage`. Words streamed
+  in the exact moment of navigation are lost (no backend queue — §3.2.2).
 - Security → no secrets stored; chat content is readable by any script on the
   origin (acceptable for MVP). Standard XSS caveat applies.
 
@@ -260,8 +309,7 @@ interface ChatRequest {
 
 type ServerEvent =
   | { type: "token";  value: string }
-  | { type: "message"; message: ChatMessage }   // complete or server-initiated
-  | { type: "action"; action: Action }           // optional: pre-parsed actions
+  | { type: "message"; message: ChatMessage }   // complete assistant message
   | { type: "done";   requestId: string }
   | { type: "error";  message: string };
 ```
@@ -428,5 +476,5 @@ file) and frontend init (`backendUrl`, `agentId`, accent/title).
   OPTIONS preflight correctly.
 - **Provider tool-calling variance**: action format is text-based to stay
   provider-agnostic; revisit tool-calling per provider later.
-- **Multi-tab**: history syncs via `storage` event, but only one tab owns the
-  live push channel (acceptable for MVP).
+- **Multi-tab**: the live stream fans out to all tabs (§3.2.2); the remaining
+  risk is concurrent-typing *write* conflicts (ticket 08), not stream ownership.

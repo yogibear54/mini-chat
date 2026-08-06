@@ -20,3 +20,5 @@ Decide the non-happy-path client UX. Sub-questions:
 PLAN refs: §3.1, §6.
 
 > **Cross-ref (from [ticket 03](./03-backend-trust-and-abuse-model.md)):** error UX must cover the abuse-protection states: `429` (per-IP rate limited) and `503` (daily budget cap exceeded / backend disabled).
+
+> **Cross-ref (from [ticket 05](./05-sse-lifecycle.md)):** add a **retry affordance** for a dropped mid-stream turn (no silent auto-resend — avoids double-spend), and a transient "reconnecting…" state when the watchdog redials.

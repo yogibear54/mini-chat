@@ -25,3 +25,5 @@ safety boundary and the UX. Sub-questions:
 
 Conceptually depends on ticket 04 for the parsed-action shape. PLAN refs: §3.4,
 §3.5.
+
+> **Cross-ref (from [ticket 04](./04-action-pipeline-ownership.md)):** the executor's input contract is now fixed — it receives client-parsed `Action` objects, one per complete `json-action` fence, in document order. **Also newly open here:** the **`say` action's purpose**. Greeting is now client-rendered (ticket 03) and push is gone, so `say`'s original "greeting/proactive" use is dead — decide: drop `say` from MVP, or keep it with a distinct meaning (e.g. a transient orb speech line vs. a normal chat message)?

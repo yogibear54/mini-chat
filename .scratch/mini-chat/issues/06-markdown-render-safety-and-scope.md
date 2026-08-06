@@ -19,3 +19,5 @@ the chat panel's markdown rendering:
   injected page context.
 
 PLAN refs: §3.1, §4 (`chat-ui.tsx`).
+
+> **Cross-ref (from [ticket 04](./04-action-pipeline-ownership.md)):** the renderer must **suppress `json-action`-tagged fences entirely** (never render them). The action scanner and the markdown renderer share the token buffer — coordinate them so action blocks are excluded from rendered prose while still parsed for execution.
