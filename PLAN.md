@@ -42,6 +42,7 @@ A single `<script>` tag on any HTML page mounts a floating "orb" agent that:
 | Source of truth | A **markdown file** (`knowledge/source.md`) loaded by the backend and injected into the system context. |
 | System prompt | Configurable per agent. |
 | Memory | **localStorage** (single-origin), **indefinite** retention until cleared, with a rolling cap. |
+| Chat rendering | `react-markdown` + `rehype-sanitize` (no `rehype-raw`); GFM allowlist, no images, no syntax highlighting (§3.7). |
 
 ---
 
@@ -241,6 +242,36 @@ Action vocabulary (MVP allowlist):
 > **not** cross domains/subdomains; cross-origin continuity requires backend
 > storage (phase 2).
 
+### 3.7 Chat rendering (markdown)
+
+LLM replies are markdown; the panel renders them **safely** (untrusted content —
+prompt-injection / XSS surface) inside the Shadow-DOM widget.
+
+- **Stack** — `react-markdown` + `rehype-sanitize`, **no `rehype-raw`**: raw HTML
+  renders as inert text (safe by default), and the sanitize schema is the
+  allowlist. (`marked` + `DOMPurify` rejected — it reintroduces an HTML-string
+  sink / `dangerouslySetInnerHTML`.) Rendered inside the shadow root, styled by
+  scoped CSS.
+- **Feature allowlist** — enable `remark-gfm` (tables, strikethrough, autolinks,
+  task-lists). Render: emphasis, inline code, fenced code blocks (**plain
+  monospace — no syntax highlighting**), lists, blockquote, links, headings,
+  tables. **Block images** (external-image loading leaks the visitor's IP /
+  read-timing — the tracking-pixel problem; the sanitizer covers script injection
+  but not the privacy leak). **Defer syntax highlighting** (bundle cost).
+- **Links** — a custom `a` component forces `target="_blank"` +
+  `rel="noopener noreferrer"` (reverse-tabnabbing + referrer protection). Allowed
+  URL schemes: **http, https, mailto, tel** only (add `tel` to the default
+  sanitize schema); block `javascript:`, `data:`, `vbscript:`, `file:`.
+- **`json-action` suppression** (§3.4 / ticket 04) — the action **scanner owns
+  fence detection** and emits **cleaned prose** (complete `json-action` fences
+  removed) to the renderer, dispatching parsed actions separately. `react-markdown`
+  renders only the cleaned buffer and never sees action fences. Mid-stream, while a
+  fence is open-but-unclosed, render only the safe prefix (no partial-command
+  flicker).
+
+This closes the XSS surface from both LLM output and injected page context:
+no-raw-HTML default + sanitize allowlist + the scheme guard.
+
 ---
 
 ## 4. Project Structure
@@ -258,7 +289,7 @@ mini-chat/
 │       ├── actions.ts      # parse json-action blocks + sandboxed executor
 │       ├── useChat.ts      # SSE client, history, rehydrate/persist, expression state
 │       ├── storage.ts      # Memory interface + localStorage impl
-│       ├── chat-ui.tsx     # panel: messages, streaming, markdown render
+│       ├── chat-ui.tsx     # panel: messages, streaming, markdown render (react-markdown + rehype-sanitize)
 │       └── styles.css      # scoped inside shadow root
 │   └── vite.config.ts      # IIFE, React inlined, auto-mount
 ├── server/                 # backend proxy (Node + TS, minimal deps)
