@@ -36,7 +36,7 @@ A single `<script>` tag on any HTML page mounts a floating "orb" agent that:
 | Bidirectionality | SSE channel carries **streamed tokens** (one-way server → client). Server-initiated push is **out of MVP** (reactive autonomy; see §3.2). |
 | Abuse protection | Origin allowlist + per-IP rate limit + daily budget cap; no `/api/push` (see §3.2.1). |
 | Autonomy | **Context-aware reactive** — uses page context and acts when engaged; does not initiate unprompted (greeting on open is fine). |
-| Actions (MVP) | `scrollTo`, `highlight`, `navigate` (same-origin), `move` (self), `say` — all sandboxed. |
+| Actions (MVP) | `scrollTo`, `highlight`, `navigate` (same-origin + one-tap confirm), `move` (self) — all sandboxed (`say` dropped, §3.4). |
 | Body | Expressive SVG **orb/face** with expression states (idle/thinking/speaking/looking/done) and eyes that orient toward the action target. |
 | Movement | Glides near the relevant section when guiding, plus idle bob. |
 | Source of truth | A **markdown file** (`knowledge/source.md`) loaded by the backend and injected into the system context. |
@@ -185,19 +185,30 @@ since only the client knows the host page.)
 Action vocabulary (MVP allowlist):
 
 ```jsonc
-{ "action": "scrollTo",   "sectionId": "pricing" }          // or { "selector": "..." }
-{ "action": "highlight",  "selector": "#plans" }
-{ "action": "navigate",   "path": "/about" }                // same-origin only
-{ "action": "move",       "near": "pricing" }               // sectionId | selector | corner | coords
-{ "action": "say",        "text": "Hi! Need help?" }        // short utterance (purpose under review — greeting is now static)
+{ "action": "scrollTo",   "sectionId": "pricing" }          // or { "selector": "..." }; smooth, centered
+{ "action": "highlight",  "selector": "#plans" }            // ~2s outline/overlay, auto-fades
+{ "action": "navigate",   "path": "/about" }                // same-origin only; one-tap confirm
+{ "action": "move",       "near": "pricing" }               // sectionId | selector | corner | "x,y"; adjacent, not overlapping
 ```
 
-**Safety (enforced by the executor):**
-- Strict action allowlist — unknown actions are ignored.
-- Selectors/sectionIds validated against the **scanned section inventory**.
-- `navigate` restricted to **same-origin** paths.
+**Safety & behavior (enforced by the executor):**
+- **Allowlist** — unknown action types are silently ignored + `console.warn`.
+- **Selectors (free, guarded)** — a target must `querySelector` to **exactly
+  one** host-page element; it may **not** resolve inside the widget's own shadow
+  DOM nor to a disallowed tag (`script`, `style`, `head`, `title`, `meta`,
+  `link`, `template`, `noscript`). Zero/multiple/forbidden → ignored. (The
+  section inventory is still scanned + injected for *reference*, §3.3, but
+  targets aren't restricted to it.)
+- `navigate` — **same-origin only** *and* a **one-tap user confirmation**;
+  `scroll`/`highlight`/`move` run immediately.
 - **Never** `eval` or run arbitrary JS.
-- Per-action **rate cap**; user can disable actions via a toggle.
+- **Rate cap** — global, **8 actions / 5 s** (excess dropped + `console.warn`).
+- **Action toggle** — a panel control, persisted in `prefs`, **default ON**; when
+  OFF the executor **no-ops** (actions parsed, prose still renders, nothing run).
+- `scrollTo` → `scrollIntoView({behavior:"smooth", block:"center"})`; `highlight`
+  → ~2 s outline then auto-fade; `move` → orb glides adjacent to (not
+  overlapping) the target, viewport-clamped. (Glide easing + highlight *color* →
+  implementer discretion / ticket 11.)
 
 > This format is **provider-agnostic** — it works with any OpenAI-compatible
 > model regardless of tool/function-calling support. (Tool calling is a future
@@ -328,8 +339,7 @@ type Action =
   | { action: "scrollTo";   sectionId?: string; selector?: string }
   | { action: "highlight";  selector: string; durationMs?: number }
   | { action: "navigate";   path: string }
-  | { action: "move";       near: string }   // sectionId | selector | corner | "x,y"
-  | { action: "say";        text: string };
+  | { action: "move";       near: string };  // sectionId | selector | corner | "x,y"
 
 interface ChatRequest {
   agentId: string;

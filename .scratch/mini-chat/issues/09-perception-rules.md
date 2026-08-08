@@ -20,3 +20,5 @@ Decide the perception module's rules. Sub-questions:
   static multi-page sites per `PLAN.md` — state the assumption explicitly.)
 
 PLAN ref: §3.3.
+
+> **Cross-ref (from [ticket 07](./07-action-execution-policy-and-ux.md)):** targets are **not** restricted to the inventory — selectors are free (must match exactly one host element, guarded). The inventory is still scanned + injected into the LLM context for *reference* (so the model knows section ids/labels to cite), but the executor accepts any valid one-match selector.

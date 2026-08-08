@@ -23,3 +23,5 @@ PLAN ref: §5.
 > **Cross-ref (from [ticket 03](./03-backend-trust-and-abuse-model.md)):** `/api/push` is removed, so the `ServerEvent` `message` type's "server-initiated" use-case is gone — only *complete* assistant messages remain, and there is no push endpoint. The `429` (rate-limited) / `503` (budget-exceeded) abuse-protection responses also need representing in the client error model.
 
 > **Cross-ref (from [ticket 04](./04-action-pipeline-ownership.md)):** `ServerEvent.action` is **removed** (client parses `json-action` fences from the token stream). **Newly open:** does the final `message` ServerEvent carry **cleaned prose** (actions stripped by the server) for the client to persist, or does the client clean its own accumulated buffer? (Affects ticket 08.)
+
+> **Cross-ref (from [ticket 07](./07-action-execution-policy-and-ux.md)):** the `Action` type **drops the `say` variant** (removed from MVP). Keep both `sectionId`/`selector` target fields — free selectors are allowed (ticket 07).

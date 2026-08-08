@@ -24,3 +24,5 @@ Decide the localStorage memory policy precisely. Sub-questions:
 PLAN ref: §3.6.
 
 > **Cross-ref (from [ticket 04](./04-action-pipeline-ownership.md)):** persisted history should store **cleaned prose** (action fences stripped), not the raw streamed buffer — decide how cleaning happens (client strips its buffer, or uses the final `message` ServerEvent; coordinate with ticket 10).
+
+> **Cross-ref (raised during ticket 07):** add a **widget `position` pref** (corner or x/y) so a user-dragged orb position persists across reloads (coordinate with ticket 11).

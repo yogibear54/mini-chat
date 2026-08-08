@@ -24,3 +24,5 @@ Link the prototype as an asset. The decision records the **chosen state machine
 Out-of-scope line.
 
 PLAN ref: §3.5.
+
+> **Added requirement (raised during ticket 07):** the widget/orb must be **user-draggable** so it can be moved out of the way if it blocks content. Decisions to make here: drag-vs-click disambiguation (a move threshold, so a click to open the panel isn't read as a drag); the dragged **position persists** across reloads (a `position` pref — coordinate with ticket 08); dragging respects viewport clamping (can't be flung off-screen); and how a manual drag interacts with the `move` action (does a `move` action override the spot the user chose?).
