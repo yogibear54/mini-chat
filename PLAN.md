@@ -231,18 +231,28 @@ Action vocabulary (MVP allowlist):
   respect the ~5MB limit).
 - Stored under `mini-chat:{agentId}`:
   ```jsonc
-  { "sessionId": "…", "createdAt": 0, "history": [ /* ChatMessage[] */ ], "prefs": {} }
+  { "sessionId": "…", "createdAt": 0, "history": [ /* cleaned ChatMessage[] */ ], "prefs": { "actionsEnabled": true, "position": "bottom-right" } }
   ```
+- `history` holds **cleaned prose** — the action-fence-stripped text the scanner
+  already produces for rendering (§3.4/§3.7); the **system message is never
+  stored** (the backend injects it each turn).
+- `prefs` = `{ actionsEnabled: boolean (default true), position?: corner | {x,y} }`
+  only. Accent color / title come from the embed config each load; open/closed
+  state is **not** persisted (panel starts collapsed).
+- **"Clear chat"** wipes `history` and **rotates a fresh `sessionId`**; **`prefs`
+  survive** (your action toggle + orb position aren't conversation state).
 - Behind a small `Memory` interface (`load` / `save` / `clear`) so a future
   backend-sync implementation is a drop-in swap.
 
 **Gotchas handled:**
-- ~5MB limit → rolling cap (last ~100 messages / ~100KB; drop oldest).
+- Rolling cap → enforce **both** ≤100 messages and ≤100 KB (serialized history);
+  when either trips, drop the **oldest** user/assistant turns first until under
+  both.
 - Private mode / disabled storage → try/catch → in-memory fallback.
 - Corrupt data → validate JSON shape → reset if invalid.
 - Multi-tab → the SSE reply **fans out to all open tabs** (§3.2.2); the
-  `storage` event keeps persisted history in sync. Concurrent message-typing
-  across tabs is a write conflict (ticket 08).
+  `storage` event keeps persisted history in sync. Concurrent writes resolve
+  **last-write-wins** (rare — only when chatting in two tabs at once).
 - Navigation gap → on a full page reload the SSE drops and reconnects with the
   same `sessionId`; the conversation survives via `localStorage`. Words streamed
   in the exact moment of navigation are lost (no backend queue — §3.2.2).

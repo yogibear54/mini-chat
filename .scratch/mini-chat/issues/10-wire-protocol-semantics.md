@@ -24,4 +24,6 @@ PLAN ref: §5.
 
 > **Cross-ref (from [ticket 04](./04-action-pipeline-ownership.md)):** `ServerEvent.action` is **removed** (client parses `json-action` fences from the token stream). **Newly open:** does the final `message` ServerEvent carry **cleaned prose** (actions stripped by the server) for the client to persist, or does the client clean its own accumulated buffer? (Affects ticket 08.)
 
+> **Resolved (by [ticket 08](./08-memory-policy.md)):** the **client cleans its own buffer** and persists that; the server does **not** send a cleaned `message` ServerEvent for persistence. So `message` is **redundant** for MVP — ticket 10 decides whether `message` has any remaining role (e.g. a "finalize" signal) or gets removed.
+
 > **Cross-ref (from [ticket 07](./07-action-execution-policy-and-ux.md)):** the `Action` type **drops the `say` variant** (removed from MVP). Keep both `sectionId`/`selector` target fields — free selectors are allowed (ticket 07).
