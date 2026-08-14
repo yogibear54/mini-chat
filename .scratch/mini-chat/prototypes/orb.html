@@ -1,0 +1,551 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mini-Chat — Orb expression & movement prototype</title>
+<!--
+  PROTOTYPE — throwaway. Answers the design questions for ticket 11
+  (Orb expression & movement engine). Not production code.
+  Double-click to run; everything inline. The pure logic (EXPRESSION machine +
+  positioning helpers) at the bottom is the bit meant to lift into orb.tsx.
+-->
+<style>
+  :root {
+    --accent: #6d28d9;
+    --bg: #f6f5f2;
+    --ink: #1c1b22;
+    --muted: #6b6770;
+    --line: #d9d6cf;
+    --orb: var(--accent);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    font: 15px/1.5 -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+    color: var(--ink); background: var(--bg);
+    padding: 20px; max-width: 1000px; margin: 0 auto;
+  }
+  h1 { font-size: 19px; margin: 0 0 4px; }
+  .lede { color: var(--muted); margin: 0 0 18px; max-width: 70ch; }
+  .q { background: #fff8e6; border: 1px solid #ecdcai; border-radius: 8px;
+       padding: 10px 12px; margin-bottom: 18px; font-size: 13.5px; }
+  .q b { color: #7a5d00; }
+
+  .cols { display: grid; grid-template-columns: 1fr 320px; gap: 18px; align-items: start; }
+  @media (max-width: 820px) { .cols { grid-template-columns: 1fr; } }
+
+  /* The "stage" stands in for the browser viewport the widget floats over. */
+  #stage {
+    position: relative; height: 440px; border: 1px solid var(--line);
+    border-radius: 12px; overflow: hidden;
+    background:
+      linear-gradient(var(--line) 1px, transparent 1px) 0 0/40px 40px,
+      linear-gradient(90deg, var(--line) 1px, transparent 1px) 0 0/40px 40px,
+      #fff;
+    user-select: none; touch-action: none;
+  }
+  #stage.mobile { height: 560px; }
+  .page-mock { position: absolute; inset: 0; padding: 14px; color: var(--muted);
+    font-size: 12px; pointer-events: none; }
+  .page-mock h2 { margin: 0 0 6px; font-size: 13px; color: #9a96a0; }
+
+  /* the action target the orb can look at / move near */
+  #target {
+    position: absolute; left: 70%; top: 62%; width: 120px; height: 60px;
+    border: 2px dashed #c56; border-radius: 8px; color: #c56; font-size: 12px;
+    display: grid; place-items: center; cursor: move; background: #fff4;
+  }
+  #target small { color: var(--muted); }
+
+  /* orb positioning wrapper: owns the glide transition (position) */
+  #orb-wrap {
+    position: absolute; left: 0; top: 0; width: 64px; height: 64px;
+    transition: transform .5s cubic-bezier(.22,.61,.36,1);
+    cursor: grab;
+  }
+  #orb-wrap.dragging { transition: none; cursor: grabbing; }
+  /* inner bob wrapper: owns the idle bob keyframe (so it never fights #orb-wrap) */
+  #orb-bob { width: 100%; height: 100%; transform-origin: center; }
+  #orb-bob.bobbing { animation: bob 3s ease-in-out infinite; }
+  @keyframes bob { 0%,100%{ transform: translateY(0) } 50%{ transform: translateY(-5px) } }
+
+  #orb { width: 100%; height: 100%; display: block;
+    filter: drop-shadow(0 4px 8px rgba(0,0,0,.18)); }
+  .pupil { transition: transform .25s ease; }
+
+  /* chat panel */
+  #panel {
+    position: absolute; width: 250px; background: #fff; border: 1px solid var(--line);
+    border-radius: 12px; padding: 10px 12px; box-shadow: 0 8px 24px rgba(0,0,0,.14);
+    font-size: 13px; transform-origin: bottom right;
+    transform: scale(.6); opacity: 0; pointer-events: none;
+    transition: transform .22s cubic-bezier(.22,.61,.36,1), opacity .22s;
+  }
+  #panel.open { transform: scale(1); opacity: 1; pointer-events: auto; }
+  #panel .msg { background: #f1eefe; color: var(--ink); padding: 6px 9px; border-radius: 9px;
+    margin-bottom: 6px; }
+  #panel .typing { color: var(--muted); }
+  #panel .cursor { display: inline-block; width: 2px; height: 14px; background: var(--accent);
+    vertical-align: -2px; animation: blink 1s steps(2) infinite; }
+  @keyframes blink { 50% { opacity: 0 } }
+
+  /* state panel */
+  #statepanel { background: #fff; border: 1px solid var(--line); border-radius: 10px;
+    padding: 12px 14px; font-size: 13px; }
+  #statepanel h3 { margin: 0 0 8px; font-size: 13px; color: var(--muted);
+    text-transform: uppercase; letter-spacing: .04em; }
+  #statepanel dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; }
+  #statepanel dt { color: var(--muted); }
+  #statepanel dd { margin: 0; font-variant-numeric: tabular-nums; }
+  #statepanel .changed { background: #fff8e6; border-radius: 4px; padding: 0 3px; }
+  .opts { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 10px; }
+  .opts label { display: block; margin: 4px 0; color: var(--ink); }
+
+  /* buttons */
+  .btns { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
+  button { font: inherit; background: #fff; color: var(--ink); border: 1px solid var(--line);
+    border-radius: 8px; padding: 7px 11px; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  button[disabled] { opacity: .4; cursor: default; }
+
+  /* walkthroughs */
+  .walk { background: #fff; border: 1px solid var(--line); border-radius: 10px;
+    padding: 12px 14px; margin-top: 18px; }
+  .tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--line);
+    margin: -2px -2px 10px; }
+  .tabs button { border: none; border-radius: 0; background: transparent; padding: 8px 11px;
+    border-bottom: 2px solid transparent; }
+  .tabs button.active { border-bottom-color: var(--accent); color: var(--accent); font-weight: 600; }
+  .scenario p { color: var(--muted); margin: 0 0 10px; }
+  .step { display: flex; align-items: center; gap: 10px; margin: 6px 0; }
+  .step .n { width: 20px; height: 20px; border-radius: 50%; background: var(--accent);
+    color: #fff; font-size: 12px; display: grid; place-items: center; flex: none; }
+  .step.done .n { background: var(--line); color: var(--muted); }
+  .step .lbl { color: var(--muted); }
+  .step.cur .lbl { color: var(--ink); font-weight: 600; }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 10px; }
+</style>
+</head>
+<body>
+
+<h1>Mini-Chat orb — expression &amp; movement prototype</h1>
+<p class="lede">A throwaway demo to feel out how the floating orb <b>behaves</b>:
+its expression states, where its eyes look, how it glides &amp; bobs, how dragging
+works, and how it clamps to the screen. Drive it with the buttons or the
+walkthroughs below, then tell me what feels wrong.</p>
+
+<div class="q">
+  <b>Questions this settles:</b>
+  (1) Is the 4-state chat lifecycle <i>idle → thinking → speaking → done</i> with
+  <b>gaze as a separate axis</b> (eyes track a target during any state) better
+  than making "looking" a 5th sequential state?
+  (2) Does a <code>move</code> action temporarily override the user's dragged
+  spot, then return home — or stay put?
+  (3) Is a ~4px drag threshold enough to tell a drag from a click-to-open?
+</div>
+
+<div class="cols">
+  <div>
+    <div id="stage">
+      <div class="page-mock"><h2>(host page mock)</h2>scroll · highlight · navigate — the orb floats over this.</div>
+      <div id="target">#pricing<small>&nbsp;drag me</small></div>
+      <div id="orb-wrap"><div id="orb-bob" class="bobbing">
+        <svg id="orb" viewBox="0 0 64 64">
+          <circle cx="32" cy="32" r="30" id="body" fill="#6d28d9"/>
+          <g id="eyes">
+            <ellipse cx="24" cy="29" rx="7" ry="8" fill="#fff"/>
+            <ellipse cx="40" cy="29" rx="7" ry="8" fill="#fff"/>
+            <circle class="pupil" id="pL" cx="24" cy="30" r="3.4" fill="#1c1b22"/>
+            <circle class="pupil" id="pR" cx="40" cy="30" r="3.4" fill="#1c1b22"/>
+          </g>
+          <path id="mouth" d="M25 42 Q32 46 39 42" stroke="#1c1b22" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+        </svg>
+      </div></div>
+      <div id="panel">
+        <div class="msg" id="pmsg">Hi! I'm the site assistant.</div>
+        <div class="typing" id="tmsg"></div>
+      </div>
+    </div>
+
+    <div class="btns">
+      <button data-act="send" class="primary">Send a message</button>
+      <button data-act="stream">Tokens streaming…</button>
+      <button data-act="action">Action: scroll to #pricing</button>
+      <button data-act="done">Turn done</button>
+      <button data-act="settle">Settle → idle</button>
+    </div>
+    <div class="btns">
+      <button data-act="moveNear">Move orb near #pricing</button>
+      <button data-act="home">Return to home corner</button>
+      <button data-act="togglePanel">Click orb (open/close panel)</button>
+      <button data-act="reset">Reset</button>
+    </div>
+    <p class="hint">You can also <b>drag the orb</b> directly (it clamps to the
+    stage edges), and <b>drag the #pricing target</b> to reposition what the eyes track.</p>
+  </div>
+
+  <div id="statepanel">
+    <h3>Current state</h3>
+    <dl>
+      <dt>expression</dt><dd id="s-expr">idle</dd>
+      <dt>gaze target</dt><dd id="s-gaze">none</dd>
+      <dt>position</dt><dd id="s-pos">—</dd>
+      <dt>home (your drag)</dt><dd id="s-home">default</dd>
+      <dt>panel</dt><dd id="s-panel">closed</dd>
+      <dt>viewport</dt><dd id="s-vp">desktop</dd>
+      <dt>last event</dt><dd id="s-evt">init</dd>
+    </dl>
+    <div class="opts">
+      <label><input type="checkbox" id="opt-return" checked> orb returns to <i>home</i> after a move action + turn done</label>
+      <label><input type="checkbox" id="opt-mobile" > mobile/narrow viewport</label>
+    </div>
+  </div>
+</div>
+
+<div class="walk">
+  <div class="tabs" id="tabs"></div>
+  <div id="scenario"></div>
+</div>
+
+<script>
+/* ─────────────────────────────────────────────────────────────────────────
+   PURE MODULE — the bit that lifts into orb.tsx. No DOM here except helpers
+   that are clearly the page's job (rendering). The state model + transitions
+   + positioning math are what the prototype is validating.
+   ───────────────────────────────────────────────────────────────────────── */
+
+// Chat lifecycle is a 4-state machine. "looking" is NOT a 5th state — gaze is a
+// separate axis (eyes track a target during any state). That's proposal #1.
+const LIFECYCLE = ["idle", "thinking", "speaking", "done"];
+
+// (state, event) -> state. state = { expr, gaze:{x,y}|null, pos, home, panelOpen, lastEvent }
+function reduce(state, ev) {
+  const s = { ...state, lastEvent: ev.type };
+  switch (ev.type) {
+    case "send":        s.expr = "thinking"; break;
+    case "stream":      s.expr = "speaking"; break;
+    case "done":        s.expr = "done"; s.gaze = null; break;
+    case "settle":      s.expr = "idle"; break;
+    case "look":        s.gaze = ev.target; break;   // orthogonal gaze axis
+    case "lookAway":    s.gaze = null; break;
+    case "drag":        s.pos = ev.pos; s.home = ev.home ?? s.home; break;
+    case "move":        s.pos = ev.pos; break;       // temporary; home unchanged
+    case "returnHome":  s.pos = s.home; break;
+    case "panel":       s.panelOpen = !s.panelOpen; break;
+    case "panelClose":  s.panelOpen = false; break;
+    case "viewport":    s.viewport = ev.viewport; break;
+  }
+  return s;
+}
+
+// Positioning helpers (pure) — these are the "correctness-critical" parts.
+const MARGIN = 14;
+function clampToViewport(pos, vw, vh, size) {
+  return {
+    x: Math.max(MARGIN, Math.min(pos.x, vw - size - MARGIN)),
+    y: Math.max(MARGIN, Math.min(pos.y, vh - size - MARGIN)),
+  };
+}
+// drag-vs-click: a movement under this threshold is a click, not a drag (#3)
+const DRAG_THRESHOLD = 4;
+function isDrag(deltaPx) { return Math.abs(deltaPx) >= DRAG_THRESHOLD; }
+
+// Eye orientation: pupils translate toward the target, clamped to the socket.
+function eyeOffset(orbCenter, target, max = 3.2) {
+  if (!target) return { x: 0, y: 0 };
+  let dx = target.x - orbCenter.x, dy = target.y - orbCenter.y;
+  const d = Math.hypot(dx, dy) || 1;
+  // off-screen / far targets: direction is still well-defined; clamp magnitude.
+  return { x: (dx / d) * max, y: (dy / d) * max };
+}
+// Place the orb adjacent to (not overlapping) a target rect.
+function adjacentTo(rect, vw, vh, size) {
+  const below = rect.bottom + MARGIN + size <= vh - MARGIN;
+  return clampToViewport(
+    below ? { x: rect.left + rect.width / 2 - size / 2, y: rect.bottom + MARGIN }
+         : { x: rect.left + rect.width / 2 - size / 2, y: rect.top - size - MARGIN },
+    vw, vh, size);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   SHELL — throwaway page wiring. Not meant to lift.
+   ───────────────────────────────────────────────────────────────────────── */
+const ORB_SIZE = 64;
+const ORB_COLOR = "#6d28d9"; // matches --accent
+const stage = document.getElementById("stage");
+const orbWrap = document.getElementById("orb-wrap");
+const orbBob = document.getElementById("orb-bob");
+const targetEl = document.getElementById("target");
+const panel = document.getElementById("panel");
+const pL = document.getElementById("pL"), pR = document.getElementById("pR");
+const mouth = document.getElementById("mouth");
+const tmsg = document.getElementById("tmsg");
+
+// Speaking = animated mouth flutter (in the real widget this syncs to token arrival)
+const MOUTHS = {
+  idle:     "M25 42 Q32 46 39 42",
+  thinking: "M26 43 Q32 43.5 38 43",
+  done:     "M24 41 Q32 48 40 41",
+  speak: ["M27 43 Q32 45 37 43", "M27 42 Q32 48 37 42", "M27 43 Q32 46.5 37 43", "M27 42 Q32 49 37 42"],
+};
+let speakTimer = null;
+function startSpeaking() {
+  if (speakTimer) return;
+  let i = 0;
+  speakTimer = setInterval(() => { mouth.setAttribute("d", MOUTHS.speak[i++ % MOUTHS.speak.length]); }, 120);
+}
+function stopSpeaking() { if (speakTimer) { clearInterval(speakTimer); speakTimer = null; } }
+
+function vpSize() {
+  const r = stage.getBoundingClientRect();
+  return { vw: r.width, vh: r.height };
+}
+function defaultHome() {
+  const { vw, vh } = vpSize();
+  return clampToViewport({ x: vw - ORB_SIZE - MARGIN, y: vh - ORB_SIZE - MARGIN }, vw, vh, ORB_SIZE);
+}
+function targetCenter() {
+  const tr = targetEl.getBoundingClientRect(), sr = stage.getBoundingClientRect();
+  return { x: tr.left + tr.width / 2 - sr.left, y: tr.top + tr.height / 2 - sr.top };
+}
+function targetRect() {
+  const tr = targetEl.getBoundingClientRect(), sr = stage.getBoundingClientRect();
+  return { left: tr.left - sr.left, top: tr.top - sr.top, width: tr.width, height: tr.height,
+           bottom: tr.bottom - sr.top };
+}
+
+let state = {
+  expr: "idle", gaze: null, pos: defaultHome(), home: defaultHome(),
+  panelOpen: false, viewport: "desktop", lastEvent: "init",
+};
+
+function flash(id) {
+  const el = document.getElementById(id);
+  el.classList.add("changed");
+  setTimeout(() => el.classList.remove("changed"), 600);
+}
+
+function render() {
+  orbWrap.style.transform = `translate(${state.pos.x}px, ${state.pos.y}px)`;
+  // gaze
+  const center = { x: state.pos.x + ORB_SIZE / 2, y: state.pos.y + ORB_SIZE / 2 };
+  // thinking with no real gaze target → glance up-left (the "thinking" pose)
+  const off = (state.expr === "thinking" && !state.gaze) ? { x: -1.6, y: -2.2 } : eyeOffset(center, state.gaze);
+  pL.setAttribute("transform", `translate(${off.x} ${off.y})`);
+  pR.setAttribute("transform", `translate(${off.x} ${off.y})`);
+  // expression cues (mouth + bob)
+  orbBob.classList.toggle("bobbing", state.expr === "idle" || state.expr === "done");
+  if (state.expr === "speaking") {
+    startSpeaking();                                  // animated talking mouth
+  } else {
+    stopSpeaking();
+    mouth.setAttribute("d",
+      state.expr === "thinking" ? MOUTHS.thinking :
+      state.expr === "done"     ? MOUTHS.done : MOUTHS.idle);
+  }
+  document.getElementById("body").setAttribute("fill",
+    state.expr === "thinking" ? "#8a5cf6" : ORB_COLOR);
+  // panel
+  positionPanel();
+  panel.classList.toggle("open", state.panelOpen);
+  // state readout
+  document.getElementById("s-expr").textContent = state.expr;
+  document.getElementById("s-gaze").textContent = state.gaze ? "#pricing" : "none";
+  document.getElementById("s-pos").textContent = `${Math.round(state.pos.x)}, ${Math.round(state.pos.y)}`;
+  document.getElementById("s-home").textContent =
+    (Math.abs(state.home.x - defaultHome().x) < 1 && Math.abs(state.home.y - defaultHome().y) < 1) ? "default" : `${Math.round(state.home.x)}, ${Math.round(state.home.y)}`;
+  document.getElementById("s-panel").textContent = state.panelOpen ? "open" : "closed";
+  document.getElementById("s-vp").textContent = state.viewport;
+  document.getElementById("s-evt").textContent = state.lastEvent;
+  flash("s-expr");
+}
+
+function positionPanel() {
+  const { vw } = vpSize();
+  const w = state.viewport === "mobile" ? vw - 2 * MARGIN : 250;
+  panel.style.width = w + "px";
+  // open to the upper-left of the orb (flip if near left edge)
+  const leftSide = state.pos.x < vw / 2;
+  const px = leftSide ? state.pos.x + ORB_SIZE + MARGIN : state.pos.x - w - MARGIN;
+  const py = Math.max(MARGIN, state.pos.y - 60);
+  panel.style.left = Math.max(MARGIN, Math.min(px, vw - w - MARGIN)) + "px";
+  panel.style.top = py + "px";
+}
+
+function dispatch(ev) { state = reduce(state, ev); render(); }
+
+/* ---- free-play buttons ---- */
+document.querySelectorAll("[data-act]").forEach(b => b.addEventListener("click", () => {
+  const a = b.dataset.act;
+  if (a === "send")        dispatch({ type: "send" });
+  if (a === "stream")      dispatch({ type: "stream" });
+  if (a === "action")      dispatch({ type: "look", target: targetCenter() });
+  if (a === "done")        dispatch({ type: "done" });
+  if (a === "settle")      dispatch({ type: "settle" });
+  if (a === "moveNear")    dispatch({ type: "move", pos: adjacentTo(targetRect(), vpSize().vw, vpSize().vh, ORB_SIZE) });
+  if (a === "home")        dispatch({ type: "returnHome" });
+  if (a === "togglePanel") dispatch({ type: "panel" });
+  if (a === "reset")       { state = { expr:"idle", gaze:null, pos:defaultHome(), home:defaultHome(), panelOpen:false, viewport:state.viewport, lastEvent:"reset" }; render(); }
+}));
+
+/* ---- drag the orb (drag-vs-click threshold) ---- */
+let drag = null;
+orbWrap.addEventListener("pointerdown", e => {
+  drag = { startX: e.clientX, startY: e.clientY, moved: 0, pos0: { ...state.pos }, acted: false };
+  orbWrap.setPointerCapture(e.pointerId);
+});
+orbWrap.addEventListener("pointermove", e => {
+  if (!drag) return;
+  const dx = e.clientX - drag.startX, dy = e.clientY - drag.startY;
+  drag.moved = Math.max(drag.moved, Math.hypot(dx, dy));
+  if (isDrag(drag.moved)) {
+    if (!drag.acted) { orbWrap.classList.add("dragging"); drag.acted = true; }
+    const { vw, vh } = vpSize();
+    const pos = clampToViewport({ x: drag.pos0.x + dx, y: drag.pos0.y + dy }, vw, vh, ORB_SIZE);
+    dispatch({ type: "drag", pos, home: pos });   // a real drag updates HOME
+  }
+});
+orbWrap.addEventListener("pointerup", e => {
+  orbWrap.classList.remove("dragging");
+  if (drag && !drag.acted) dispatch({ type: "panel" });  // under threshold = click = open
+  drag = null;
+});
+
+/* ---- drag the #pricing target ---- */
+let tdrag = null;
+targetEl.addEventListener("pointerdown", e => { tdrag = { x: e.clientX, y: e.clientY,
+  l: targetEl.offsetLeft, t: targetEl.offsetTop }; targetEl.setPointerCapture(e.pointerId); });
+targetEl.addEventListener("pointermove", e => {
+  if (!tdrag) return;
+  const { vw, vh } = vpSize();
+  const l = Math.max(MARGIN, Math.min(tdrag.l + (e.clientX - tdrag.x), vw - targetEl.offsetWidth - MARGIN));
+  const t = Math.max(MARGIN, Math.min(tdrag.t + (e.clientY - tdrag.y), vh - targetEl.offsetHeight - MARGIN));
+  targetEl.style.left = l + "px"; targetEl.style.top = t + "px";
+  if (state.gaze) dispatch({ type: "look", target: targetCenter() });
+});
+targetEl.addEventListener("pointerup", () => { tdrag = null; });
+
+/* ---- options ---- */
+document.getElementById("opt-mobile").addEventListener("change", e => {
+  stage.classList.toggle("mobile", e.target.checked);
+  dispatch({ type: "viewport", viewport: e.target.checked ? "mobile" : "desktop" });
+  // re-clamp into the new viewport
+  const { vw, vh } = vpSize();
+  state.pos = clampToViewport(state.pos, vw, vh, ORB_SIZE);
+  state.home = clampToViewport(state.home, vw, vh, ORB_SIZE);
+  render();
+});
+// the "return home after move" option is consulted by the walkthrough only.
+
+/* ─────────────────────────────────────────────────────────────────────────
+   GUIDED WALKTHROUGHS — scenarios that poke the awkward cases.
+   ───────────────────────────────────────────────────────────────────────── */
+const SCENARIOS = [
+  { name: "A full chat turn", desc:
+      "The happy path: you ask something, the orb thinks, speaks, performs an action (eyes track #pricing), then settles back to idle.",
+    steps: [
+      ["send","Send a message — orb goes ‘thinking’ (purple, flat mouth, no bob)"],
+      ["stream","Tokens arrive — orb goes ‘speaking’ (mouth moves)"],
+      ["action","An action fires — eyes lock onto #pricing (gaze axis, still ‘speaking’)"],
+      ["done","Turn completes — ‘done’ (big smile), gaze releases"],
+      ["settle","Brief pause — back to ‘idle’ (bobbing returns)"],
+    ]},
+  { name: "Drag vs click", desc:
+      "The 4px threshold: a tiny press opens the panel; a real drag moves the orb and does NOT open it.",
+    steps: [
+      ["togglePanel","Click (no drag) → panel opens"],
+      ["__drag","Now drag the orb a little by hand — it moves, panel does NOT open"],
+      ["togglePanel","Click again → panel closes"],
+    ]},
+  { name: "Move action vs your spot", desc:
+      "You dragged the orb somewhere comfy. A ‘move near #pricing’ action glides it over for this turn — then (with the option on) it returns to YOUR spot after ‘done’. Toggle the option off to make it stay.",
+    steps: [
+      ["__dragHome","First, drag the orb to a corner you like (sets ‘home’)"],
+      ["moveNear","Move orb near #pricing (temporary glide; home unchanged)"],
+      ["done","Turn done"],
+      ["__maybeReturn","If ‘returns home’ is ON → orb glides back to your corner. Toggle the option OFF and replay to see it stay."],
+    ]},
+  { name: "Viewport clamping", desc:
+      "Try to fling the orb off the stage. The clamp keeps a 14px margin on every edge — it can never leave the screen.",
+    steps: [
+      ["__drag","Drag the orb toward any edge as hard as you like — it stops at the margin"],
+      ["home","Return to home corner"],
+    ]},
+  { name: "Mobile", desc:
+      "Tick the ‘mobile/narrow viewport’ option. The orb re-clamps into the smaller space and the panel goes (near-)full-width.",
+    steps: [
+      ["__mobile","Tick ‘mobile/narrow viewport’ in the state panel"],
+      ["togglePanel","Open the panel — it’s now wide, constrained to the narrow screen"],
+      ["__mobile","Untick to return to desktop"],
+    ]},
+];
+
+let activeTab = 0, stepIdx = 0;
+const tabsEl = document.getElementById("tabs");
+const scenEl = document.getElementById("scenario");
+
+function runStep(act) {
+  if (act === "send") dispatch({ type: "send" });
+  else if (act === "stream") dispatch({ type: "stream" });
+  else if (act === "action") dispatch({ type: "look", target: targetCenter() });
+  else if (act === "done") dispatch({ type: "done" });
+  else if (act === "settle") dispatch({ type: "settle" });
+  else if (act === "moveNear") dispatch({ type: "move", pos: adjacentTo(targetRect(), vpSize().vw, vpSize().vh, ORB_SIZE) });
+  else if (act === "home") dispatch({ type: "returnHome" });
+  else if (act === "togglePanel") dispatch({ type: "panel" });
+  else if (act === "__drag") scenEl.insertAdjacentHTML("beforeend",
+       `<p class="hint">↳ do this one by hand: drag the orb.</p>`);
+  else if (act === "__dragHome") scenEl.insertAdjacentHTML("beforeend",
+       `<p class="hint">↳ do this one by hand: drag the orb to a corner.</p>`);
+  else if (act === "__maybeReturn") {
+    if (document.getElementById("opt-return").checked) dispatch({ type: "returnHome" });
+    scenEl.insertAdjacentHTML("beforeend",
+       `<p class="hint">↳ option is ${document.getElementById("opt-return").checked ? "ON → returned home" : "OFF → stayed put"}.</p>`);
+  }
+  else if (act === "__mobile") scenEl.insertAdjacentHTML("beforeend",
+       `<p class="hint">↳ do this one by hand: toggle the ‘mobile’ checkbox.</p>`);
+}
+
+function drawScenario() {
+  tabsEl.innerHTML = "";
+  SCENARIOS.forEach((s, i) => {
+    const b = document.createElement("button");
+    b.textContent = s.name; b.className = i === activeTab ? "active" : "";
+    b.onclick = () => { activeTab = i; stepIdx = 0; resetScenario(); };
+    tabsEl.appendChild(b);
+  });
+  const s = SCENARIOS[activeTab];
+  let h = `<div class="scenario"><p>${s.desc}</p>`;
+  s.steps.forEach((step, i) => {
+    const done = i < stepIdx, cur = i === stepIdx;
+    h += `<div class="step ${done?'done':''} ${cur?'cur':''}"><div class="n">${i+1}</div>` +
+         `<span class="lbl">${step[1]}</span>` +
+         (cur ? ` <button onclick="window.__advance()">do it ▸</button>` : "") + `</div>`;
+  });
+  h += `</div>`;
+  scenEl.innerHTML = h;
+}
+function resetScenario() {
+  state = { expr:"idle", gaze:null, pos:defaultHome(), home:defaultHome(), panelOpen:false, viewport:state.viewport, lastEvent:"scenario reset" };
+  render(); drawScenario();
+}
+window.__advance = function() {
+  const s = SCENARIOS[activeTab];
+  if (stepIdx >= s.steps.length) return;
+  runStep(s.steps[stepIdx][0]);
+  stepIdx++; drawScenario();
+};
+
+window.addEventListener("resize", () => {
+  const { vw, vh } = vpSize();
+  state.pos = clampToViewport(state.pos, vw, vh, ORB_SIZE);
+  state.home = clampToViewport(state.home, vw, vh, ORB_SIZE);
+  render();
+});
+
+render(); drawScenario();
+</script>
+</body>
+</html>

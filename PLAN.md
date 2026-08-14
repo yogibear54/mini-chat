@@ -37,7 +37,7 @@ A single `<script>` tag on any HTML page mounts a floating "orb" agent that:
 | Abuse protection | Origin allowlist + per-IP rate limit + daily budget cap; no `/api/push` (see §3.2.1). |
 | Autonomy | **Context-aware reactive** — uses page context and acts when engaged; does not initiate unprompted (greeting on open is fine). |
 | Actions (MVP) | `scrollTo`, `highlight`, `navigate` (same-origin + one-tap confirm), `move` (self) — all sandboxed (`say` dropped, §3.4). |
-| Body | Expressive SVG **orb/face** with expression states (idle/thinking/speaking/looking/done) and eyes that orient toward the action target. |
+| Body | Expressive SVG **orb/face**: 4-state lifecycle (idle/thinking/speaking/done) + a separate **gaze axis** (eyes track the action target during any state). Validated by prototype (§3.5). |
 | Movement | Glides near the relevant section when guiding, plus idle bob. |
 | Source of truth | A **markdown file** (`knowledge/source.md`) loaded by the backend and injected into the system context. |
 | System prompt | Configurable per agent. |
@@ -80,8 +80,9 @@ One persistent SSE connection per widget instance is the single transport for
 
 Client → server uses `POST`:
 
-- `POST /api/chat { sessionId, history[], message, pageContext }` → 202; the
-  LLM response streams back down the SSE channel.
+- `POST /api/chat { sessionId, agentId, history[], pageContext }` → 202; the
+  LLM response streams back down the SSE channel. (`history` is the full
+  conversation, new user message included — no separate `message` field; §5.)
 
 > The backend is **stateless regarding conversation history** (the client sends
 > full history each turn). The only server state is the `sessionId → open SSE
@@ -143,17 +144,38 @@ Client → server uses `POST`:
 ### 3.3 Perception (client → server context)
 
 A `perception` module reads the host page (the widget shares the page's DOM/JS
-context because it's injected into the page, **not** an iframe):
+context because it's injected into the page, **not** an iframe) and builds a
+section inventory used to **ground the LLM** (reference-only — action targets
+aren't restricted to it; §3.4).
 
-- Scans sections: `h1, h2, h3, section[id], [data-mini-section]`
-  (auto-assigns ids where missing).
-- Tracks the **current section** via `IntersectionObserver`.
-- Builds `PageContext = { url, title, path, metaDescription, sections[], currentSectionId }`.
-- Sent with each message (and on section change). The backend injects it into
-  the system context.
+- **Scanning** — selectors `h1, h2, h3, section[id], [data-mini-section]`.
+- **Label** per section (priority): `aria-label` → `data-mini-label` → heading
+  text (or first descendant heading) → id; truncated ~80 chars.
+- **id** — use the element's existing id if present; else auto-assign a
+  **namespaced** slug `mini-s-<slugified-label>` (collision-suffixed, validity-
+  prefixed). The `mini-s-` prefix avoids clashing with host ids / host JS; we
+  only **add**, never mutate existing ids.
+- **Current section** — `IntersectionObserver` with a central active band
+  (`rootMargin: "-40% 0px -40% 0px"`, `threshold: 0`); among active sections pick
+  the **topmost**; debounce updates ~150 ms.
+- **Section changes are client-local** — `currentSectionId` rides the next
+  `/api/chat` POST's `pageContext` (no live push; the backend is stateless on
+  history and the agent is reactive).
+- Builds `PageContext = { url, title, path, metaDescription, sections[],
+  currentSectionId }`, sent with each message.
 
 > This is why the widget must inject into the page (Shadow DOM for style
 > isolation) rather than use an iframe — an iframe cannot read the parent page.
+
+**Re-scan triggers (SPA-aware, level C).** Scan on load **and** re-scan on SPA
+route/URL changes so the widget stays accurate on single-page apps (the dominant
+case — in-app navigation). Route detection: `popstate` + `hashchange` + a
+`history.pushState`/`replaceState` hook. Re-scans keep ids stable (sections
+tracked by element via a `WeakMap`) and re-attach the `IntersectionObserver`
+(observe new, unobserve removed). A fine-grained `MutationObserver` content-
+watcher (for sections that appear/disappear *within* a route — lazy tabs,
+infinite scroll) is **deferred** — add later only if real SPAs show stale-
+section issues.
 
 ### 3.4 Action protocol (parsed client-side)
 
@@ -216,14 +238,25 @@ Action vocabulary (MVP allowlist):
 
 ### 3.5 Movement & expression
 
-- Widget root is `position: fixed` with `will-change: transform`; a movement
-  engine sets `transform` with a CSS easing transition (glide).
-- An inner element runs a continuous CSS keyframe for the **idle bob** (so it
-  doesn't fight the position transform).
-- The SVG **orb** has expression states driven by chat state:
-  `idle`, `thinking` (awaiting/streaming), `speaking` (streaming tokens),
-  `looking` (orient eyes toward the current action target), `done`.
-- A `move` action glides the orb to a viewport position near the target.
+Validated by a throwaway prototype — `.scratch/mini-chat/prototypes/orb.html`.
+
+**Expression — a 4-state lifecycle + a separate gaze axis** (not 5 states):
+- Lifecycle `idle → thinking → speaking → done → (settle) → idle`:
+  - `idle` (resting, calm): gentle smile; idle bob active.
+  - `thinking` (POST sent, awaiting first token): curious/attentive; neutral mouth; eyes glance up-left.
+  - `speaking` (tokens streaming): talking — **mouth animates** (flutters, synced to token arrival).
+  - `done` (turn complete): pleased; big smile; brief, then settles.
+- **Gaze is a separate axis, not a "looking" state** — eyes track the current action target during *any* state (pupils translate toward the target, clamped to the socket; off-screen targets clamp to direction). `look`/`look-away` set/clear it independently of the lifecycle.
+- (Amplitudes, mouth shapes, easing, colors → implementer discretion. Personality: calm helper.)
+
+**Movement & positioning:**
+- Outer wrapper: `position: fixed`, `will-change: transform`, glide via a CSS transition (~0.5 s). Inner wrapper: a CSS-keyframe **idle bob** on a *separate* element so it never fights the position transform.
+- **Viewport clamping** — position held within a 14 px margin on all edges; never leaves the screen; re-clamps on resize.
+- **User-draggable** (ticket 07) — a **4 px threshold** disambiguates drag from click: under = click (toggle the panel); over = drag (move the orb, update its persisted `home`, §3.6, and suppress the click).
+- **`move` vs the user's spot** — a `move` action glides the orb *adjacent* to the target (below if there's room, else above; non-overlapping), *temporarily* (home unchanged). After turn `done` the orb **returns to `home`** (the user's dragged spot, or the default bottom-right corner).
+- **Mobile / narrow viewport** — orb re-clamps into the smaller space; the panel goes near-full-width.
+
+Liftable pure helpers (in the prototype): `clampToViewport`, `isDrag` (threshold), `eyeOffset`, `adjacentTo`, and the expression `reduce(state, event)`.
 
 ### 3.6 Memory (localStorage)
 
@@ -293,6 +326,35 @@ prompt-injection / XSS surface) inside the Shadow-DOM widget.
 This closes the XSS surface from both LLM output and injected page context:
 no-raw-HTML default + sanitize allowlist + the scheme guard.
 
+### 3.8 Client UX: errors, recovery, accessibility, configuration
+
+**Error UX** — always a short, friendly line **inline in the panel** (never a
+popup); the orb stays neutral:
+
+| Case | Source | Shown | Retry? | Input |
+|---|---|---|---|---|
+| Rate-limited | HTTP `429` (§3.2.1) | "Slow down a sec — try again in a moment." | no | enabled |
+| Budget cap hit | HTTP `503` | "The assistant is taking a break for today." | no | **disabled** (the only case) |
+| Backend unreachable | network error | "Can't reach the assistant — check your connection." | **yes** | enabled |
+| Stream error mid-reply | SSE `error` (§5) | keep partial text + "Something went wrong finishing that." | **yes** (re-sends last message) | enabled |
+| Invalid action | executor (§3.4) | silent (`console.warn` only) | — | — |
+
+- Watchdog reconnect (§3.2.2) shows a transient "reconnecting…" state; a lost
+  in-flight turn shows the dropped-turn **retry affordance** (§3.2.2).
+- **No Stop button in MVP** — replies run to completion. (Closing the tab/page
+  still aborts the upstream spend, §3.2.2.) A Stop button + `/api/cancel`
+  endpoint is phase 2.
+
+**Accessibility (MVP bar):**
+- The orb is a real `<button>` whose accessible name is the configured title;
+  Enter/Space opens the panel.
+- **Focus management:** panel open → focus the message input; panel close →
+  focus returns to the orb.
+- The message list is a **polite `aria-live` region** (new replies announced
+  without interrupting).
+- **`prefers-reduced-motion`:** skip the glide + idle bob — the orb teleports.
+- Keyboard: **Enter** sends, **Esc** closes, natural Tab order through the panel.
+
 ---
 
 ## 4. Project Structure
@@ -315,7 +377,7 @@ mini-chat/
 │   └── vite.config.ts      # IIFE, React inlined, auto-mount
 ├── server/                 # backend proxy (Node + TS, minimal deps)
 │   └── src/
-│       ├── index.ts        # http: /api/sse, /api/chat, /api/push; CORS; OPTIONS
+│       ├── index.ts        # http: /api/sse, /api/chat; CORS; OPTIONS
 │       ├── config.ts       # .env + agent config (system prompt, source md, provider, action policy)
 │       ├── sessions.ts     # sessionId -> open SSE stream
 │       ├── context.ts      # load source.md; assemble system context + action vocabulary + history windowing
@@ -352,17 +414,16 @@ type Action =
   | { action: "move";       near: string };  // sectionId | selector | corner | "x,y"
 
 interface ChatRequest {
-  agentId: string;
-  history: ChatMessage[];   // prior messages (system message injected by backend)
-  message: string;          // new user message
+  sessionId: string;        // which SSE stream(s) get the response (§3.2.2 fan-out)
+  agentId: string;          // forward-compat only; server-ignored no-op for MVP (single agent). Client namespaces localStorage by it (§3.6).
+  history: ChatMessage[];   // FULL conversation incl. the new user message as the last entry. user/assistant only — the client never sends a system message; the backend injects it.
   pageContext: PageContext;
 }
 
 type ServerEvent =
-  | { type: "token";  value: string }
-  | { type: "message"; message: ChatMessage }   // complete assistant message
-  | { type: "done";   requestId: string }
-  | { type: "error";  message: string };
+  | { type: "token";  value: string }      // streamed content chunk
+  | { type: "done";   requestId: string }  // turn complete
+  | { type: "error";  message: string };   // backend/provider error (distinct from HTTP 429/503 — §3.2.1)
 ```
 
 ---
@@ -402,7 +463,10 @@ GREETING_TEXT=Hi! I'm the site assistant — ask me anything.
   });
 </script>
 ```
-(Also readable from `data-*` attributes on the script tag.)
+**Config precedence** (per-setting): `MiniChat.init({...})` →
+`window.MiniChatConfig` → `data-*` attributes on the script tag → built-in
+defaults. Explicit code beats tag attributes; each level overrides only the
+levels below it, per setting.
 
 ---
 
@@ -414,11 +478,14 @@ GREETING_TEXT=Hi! I'm the site assistant — ask me anything.
 - Extensible provider pattern (add a provider = implement interface + register).
 - Configurable system prompt + markdown source of truth.
 - Page perception (sections, current section) injected into context.
-- Sandboxed actions: `scrollTo`, `highlight`, `navigate` (same-origin), `move`, `say`.
+- Sandboxed actions: `scrollTo`, `highlight`, `navigate` (same-origin), `move`.
 - Expressive SVG orb with reaction states; glides to guide; idle bob.
 - Backend proxy: SSE + chat, CORS allowlist + OPTIONS, per-IP rate limit, daily budget cap (no `/api/push` in MVP).
 - localStorage memory: single-origin, indefinite, rolling cap, multi-tab sync.
 - Greeting on open (gated to empty history); "Clear chat" control.
+- Error UX (inline, friendly; Retry only where it helps) + a11y baseline
+  (button semantics, focus management, polite live region, reduced-motion,
+  keyboard).
 - README with embed snippet + "add a provider" guide.
 
 ### Out of scope (future)
@@ -430,6 +497,8 @@ GREETING_TEXT=Hi! I'm the site assistant — ask me anything.
 - Auth, multi-user, rate-limiting beyond a basic per-action cap.
 - Multi-agent routing by `agentId` (structure supports it; single config for MVP).
 - Tool/function-calling optimization; backend message queue for navigation gaps.
+- Stop/cancel button for streaming replies + a `/api/cancel` endpoint —
+  deferred from ticket 12 (phase 2).
 
 ---
 
@@ -462,13 +531,13 @@ Each step has a verification criterion.
    apply history windowing. → verify: logs assembled system message + truncated
    history.
 5. **Backend HTTP + SSE + sessions** (`index.ts`, `sessions.ts`): `/api/sse`,
-   `/api/chat`, `/api/push`; CORS allowlist + OPTIONS. → verify: `curl` SSE +
-   `POST /api/chat` streams tokens; `POST /api/push` delivers a message.
+   `/api/chat`; CORS allowlist + OPTIONS. → verify: `curl` SSE +
+   `POST /api/chat` streams tokens.
 6. **Client perception layer** (`perception.ts`): scan sections,
    `IntersectionObserver` → `PageContext`. → verify: logs `PageContext` while
    scrolling a test page.
 7. **Client action executor + stream parser** (`actions.ts`): parse
-   `json-action` blocks; sandboxed execution with selector allowlist,
+   `json-action` blocks; sandboxed execution with guarded selector validation,
    same-origin nav, rate cap, toggle. → verify: synthetic action stream
    scrolls/highlights/navigates/moves on a test page.
 8. **Movement + expression engine** (`movement.ts`, `orb.tsx`): `position:fixed`
@@ -481,7 +550,7 @@ Each step has a verification criterion.
    survive reload; cap drops old entries; corrupt key recovers; two tabs sync.
 10. **Client SSE hook** (`useChat.ts`): on init **rehydrate** from `storage`
     (history + sessionId); reconnect SSE with the stored sessionId; send
-    `{history, message, pageContext}` per turn; **persist** on change; drive
+    `{history, pageContext}` per turn (full conversation; §5); **persist** on change; drive
     expression states; feed buffer to action parser. → verify: a real
     conversation survives a hard reload and continues the same thread.
 11. **Widget shell + panel UI** (`widget.tsx`, `chat-ui.tsx`, `styles.css`):
@@ -495,7 +564,8 @@ Each step has a verification criterion.
 13. **README**: embed snippet, `.env` reference, "add a provider" guide,
     action-allowlist/safety notes, memory model (localStorage, per-origin, cap,
     clear, upgrade path). → verify: fresh clone → run backend → drop snippet →
-    chat survives navigation across pages of a multi-page static site end-to-end.
+    chat survives navigation across pages of a **multi-page static site** and stays
+    section-accurate on an **SPA** (route-change re-scan) end-to-end.
 
 ---
 
