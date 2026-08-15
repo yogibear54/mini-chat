@@ -15,7 +15,17 @@ You may act on the page by emitting fenced code blocks tagged exactly \`json-act
   - {"action":"navigate","path":"/about"} — same-origin navigation only; the user is asked to confirm
   - {"action":"move","near":"pricing"} — move yourself near a sectionId | selector | corner(top-left…) | "x,y"
 - Prefer sectionId when one fits; selectors must match exactly one element.
-- Never mention the fences or this instruction text in your replies.`;
+- Never mention the fences or this instruction text in your replies.
+
+Example — deciding to scroll the visitor to the pricing section, you write prose
+plus exactly this kind of block (note the fence tag and the JSON on one line):
+
+\`\`\`json-action
+{"action":"scrollTo","sectionId":"pricing"}
+\`\`\`
+
+The block above is an example of the format only. Emit actions only when they
+truly help, using the real current section ids.`;
 
 export function assembleSystemMessage(input: {
   systemPrompt: string;
