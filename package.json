@@ -2,14 +2,20 @@
   "name": "mini-chat",
   "private": true,
   "type": "module",
-  "workspaces": ["shared", "server", "client"],
+  "workspaces": [
+    "shared",
+    "server",
+    "client"
+  ],
   "scripts": {
     "test": "vitest run",
+    "verify:mount": "node scripts/verify-mount.mjs",
     "typecheck": "npm -w shared run typecheck && npm -w server run typecheck && npm -w client run typecheck",
     "build": "npm -w client run build",
     "dev": "npm -w server run dev"
   },
   "devDependencies": {
+    "jsdom": "^24.1.3",
     "typescript": "^5.5.4",
     "vitest": "^2.0.5"
   }

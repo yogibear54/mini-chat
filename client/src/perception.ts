@@ -78,13 +78,13 @@ export function createPerception(doc: Document = document): Perception {
 
   function labelSource(el: Element): LabelSource {
     const heading =
-      el instanceof HTMLElement && /^H[1-3]$/.test(el.tagName)
-        ? el.innerText
-        : (el.querySelector("h1, h2, h3")?.textContent ?? "");
+      /^H[1-3]$/.test(el.tagName)
+        ? el.textContent ?? ""
+        : el.querySelector("h1, h2, h3")?.textContent ?? "";
     return {
       aria: el.getAttribute("aria-label") ?? "",
       mini: el.getAttribute("data-mini-label") ?? "",
-      heading,
+      heading: heading.trim(),
       id: el.id,
     };
   }
@@ -96,6 +96,7 @@ export function createPerception(doc: Document = document): Perception {
   /** Central-band scrollspy: a section is active in the middle 20% of the viewport. */
   function watch(): void {
     observer?.disconnect();
+    if (typeof IntersectionObserver === "undefined") return; // very old engines: no scrollspy
     const active = new Set<string>();
     observer = new IntersectionObserver(
       (entries) => {

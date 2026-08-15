@@ -168,6 +168,12 @@ function App({ config, greetingText }: { config: WidgetConfig; greetingText: str
     if (result === "click") setOpen((o) => !o);
   };
 
+  // keyboard activation (§3.8): Enter/Space on the button fires a click with
+  // detail === 0 — the pointer path above handles mouse clicks (detail ≥ 1)
+  const onOrbClick = (e: React.MouseEvent) => {
+    if (e.detail === 0) setOpen((o) => !o);
+  };
+
   return (
     <div
       className="mc-root"
@@ -187,6 +193,7 @@ function App({ config, greetingText }: { config: WidgetConfig; greetingText: str
             onPointerDown={movement.onPointerDown}
             onPointerMove={movement.onPointerMove}
             onPointerUp={onPointerUp}
+            onClick={onOrbClick}
             style={{ border: "none", background: "none", padding: 0, cursor: "inherit" }}
           >
             <Orb expr={expr} gaze={gaze} />
