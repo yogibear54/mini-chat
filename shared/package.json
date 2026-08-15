@@ -1,0 +1,6 @@
+{
+  "name": "@mini-chat/shared",
+  "private": true,
+  "type": "module",
+  "scripts": { "typecheck": "tsc -p ." }
+}

@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SPA demo — mini-chat</title>
+  <style>
+    body { font: 16px/1.6 -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; color: #222; }
+    header { padding: 1rem 1.5rem; border-bottom: 1px solid #eee; }
+    header button { font: inherit; margin-right: .6rem; cursor: pointer; }
+    section { min-height: 80vh; padding: 2rem 1.5rem; }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <header>
+    <strong>SPA demo</strong> — routes change via pushState; the widget re-scans sections per route.
+    <div style="margin-top:.6rem">
+      <button onclick="go('home')">Home</button>
+      <button onclick="go('docs')">Docs</button>
+      <button onclick="go('contact')">Contact</button>
+    </div>
+  </header>
+
+  <section id="page-home">
+    <h1>Home (SPA)</h1>
+    <p>Single-page-app route. Switching routes replaces the sections below.</p>
+  </section>
+
+  <section id="page-docs" class="hidden" aria-label="Docs">
+    <h2 id="docs-api">API docs</h2>
+    <p>Fictional docs content. The assistant knows this section as "docs-api".</p>
+  </section>
+
+  <section id="page-contact" class="hidden" aria-label="Contact">
+    <h2 id="contact">Contact</h2>
+    <p>Fictional contact section.</p>
+  </section>
+
+  <script>
+    function go(route) {
+      document.querySelectorAll("[id^=page-]").forEach((el) => el.classList.add("hidden"));
+      document.getElementById("page-" + route).classList.remove("hidden");
+      history.pushState(null, "", "/demo/spa.html?r=" + route);
+    }
+    addEventListener("popstate", () => location.reload());
+  </script>
+
+  <script src="/mini-chat.js"></script>
+  <script>
+    window.MiniChat.init({ backendUrl: location.origin, agentId: "demo", title: "SPA assistant" });
+  </script>
+</body>
+</html>
