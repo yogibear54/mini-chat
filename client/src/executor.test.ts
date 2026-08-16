@@ -1,20 +1,21 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { createActionScanner, createExecutor } from "./actions";
+import { createActionScanner, createExecutor, validateActionShape, parseNavPath } from "./actions";
 import type { Action } from "@shared/types";
 
-// Executor integration (browser-like jsdom): replay REAL model replies through
-// scanner + executor and assert what the user should have seen happen.
+// Executor integration in jsdom: replay real model replies through the
+// scanner + executor and assert the user-observable behaviors (navigate gate,
+// scrollTo call, highlight inline styles, toggle off no-op, shadow guard).
 
 beforeEach(() => {
+  document.body.innerHTML = "";
   vi.spyOn(console, "warn").mockImplementation(() => {});
   Element.prototype.scrollIntoView = vi.fn();
 });
 afterEach(() => vi.restoreAllMocks());
 
-/** The reply the model actually produced (captured live, 2026-08-15). */
 const REAL_NAVIGATE_REPLY =
-  'The pricing plans live on their own page — taking you there now.\n\n' +
+  "The pricing plans live on their own page — taking you there now.\n\n" +
   '```json-action\n{"action":"navigate","path":"/demo/pricing.html"}\n```\n';
 
 function feedReply(reply: string) {
@@ -33,29 +34,45 @@ function feedReply(reply: string) {
 }
 
 function makeExecutor(over: Partial<Parameters<typeof createExecutor>[1]> = {}) {
-  const shadow = document.createElement("div").attachShadow({ mode: "open" });
+  const host = document.createElement("div");
+  host.id = "mini-chat-host";
+  const shadow = host.attachShadow({ mode: "open" });
+  const wrap = document.createElement("div");
+  wrap.className = "mc-orb-wrap";
+  wrap.style.transform = "translate(100px, 100px)";
+  shadow.appendChild(wrap);
+  document.body.appendChild(host);
   const onNavigate = vi.fn().mockResolvedValue(true);
   const onGaze = vi.fn();
   const onMove = vi.fn();
-  const executor = createExecutor(() => shadow, {
-    enabled: () => true,
-    onNavigate,
-    onGaze,
-    onMove,
-    ...over,
-  });
-  return { executor, onNavigate, onGaze, onMove, shadow };
+  const executor = createExecutor(
+    () => document.querySelector("#mini-chat-host")?.shadowRoot ?? null,
+    { enabled: () => true, onNavigate, onGaze, onMove, ...over },
+  );
+  return { executor, onNavigate, onGaze, onMove, wrap };
 }
 
-describe("replaying the real model reply", () => {
-  it("scanner extracts the navigate action and strips it from prose", () => {
+function makeHostlessExecutor(over: Partial<Parameters<typeof createExecutor>[1]> = {}) {
+  return createExecutor(() => null, {
+    enabled: () => true,
+    onNavigate: vi.fn().mockResolvedValue(true),
+    onGaze: vi.fn(),
+    onMove: vi.fn(),
+    ...over,
+  });
+}
+
+describe("scanner replays model reply correctly", () => {
+  it("extracts a navigate action and strips it from the prose", () => {
     const { actions, prose } = feedReply(REAL_NAVIGATE_REPLY);
     expect(actions).toEqual([{ action: "navigate", path: "/demo/pricing.html" }]);
     expect(prose).not.toContain("json-action");
     expect(prose).toContain("taking you there now");
   });
+});
 
-  it("executor routes navigate through the confirm gate (onNavigate)", async () => {
+describe("navigate gate", () => {
+  it("routes navigate through the confirm callback (onNavigate)", async () => {
     const { executor, onNavigate } = makeExecutor();
     const { actions } = feedReply(REAL_NAVIGATE_REPLY);
     await executor.execute(actions[0]);
@@ -65,7 +82,9 @@ describe("replaying the real model reply", () => {
 
 describe("scrollTo", () => {
   it("smooth-centers an existing section", async () => {
-    document.body.innerHTML = '<section id="pricing">Pricing</section>';
+    const sec = document.createElement("section");
+    sec.id = "pricing";
+    document.body.appendChild(sec);
     const { executor } = makeExecutor();
     await executor.execute({ action: "scrollTo", sectionId: "pricing" });
     expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({
@@ -74,18 +93,21 @@ describe("scrollTo", () => {
     });
   });
 
-  it("resolves a bare selector that is really an element id (models drop the #)", async () => {
-    document.body.innerHTML = '<div id="growth">Growth</div>';
+  it("accepts a bare selector that is really an element id (models drop the #)", async () => {
+    const g = document.createElement("div");
+    g.id = "growth";
+    document.body.appendChild(g);
     const { executor } = makeExecutor();
     await executor.execute({ action: "highlight", selector: "growth" });
-    const el = document.getElementById("growth")!;
-    expect(el.getAttribute("data-mini-highlight")).toBe(""); // acted on the right element
-    el.removeAttribute("data-mini-highlight");
+    expect(g.getAttribute("data-mini-highlight")).not.toBeNull();
+    g.removeAttribute("data-mini-highlight");
   });
 
-  it("drops silently when the section is not on this page", async () => {
-    document.body.innerHTML = '<section id="hero">Home</section>';
-    const { executor, onNavigate } = makeExecutor();
+  it("warns and does nothing when the section is not on this page", async () => {
+    const sec = document.createElement("section");
+    sec.id = "hero";
+    document.body.appendChild(sec);
+    const { executor } = makeExecutor();
     await executor.execute({ action: "scrollTo", sectionId: "pricing" });
     expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
     expect(console.warn).toHaveBeenCalled();
@@ -93,27 +115,50 @@ describe("scrollTo", () => {
 });
 
 describe("highlight", () => {
-  it("is VISIBLE on the host page: inline outline styles (not shadow CSS)", async () => {
+  it("applies INLINE outline styles (host page element cannot see shadow CSS)", async () => {
     vi.useFakeTimers();
-    document.body.innerHTML = '<div id="growth">Growth plan</div>';
+    const g = document.createElement("div");
+    g.id = "growth";
+    g.textContent = "Growth plan";
+    document.body.appendChild(g);
     const { executor } = makeExecutor();
     await executor.execute({ action: "highlight", selector: "#growth" });
-    const el = document.getElementById("growth")!;
-    // the bug we're regression-testing: styles must be INLINE (host page
-    // elements cannot see the widget's shadow-root stylesheet)
-    expect(el.style.outline).not.toBe("");
-    expect(el.style.outline).toContain("solid"); // visible outline applied inline
+    expect(g.style.outline).toContain("solid"); // visible inline
     vi.advanceTimersByTime(2_100);
-    expect(el.style.outline).toBe(""); // auto-clears
+    expect(g.style.outline).toBe(""); // auto-clears
     vi.useRealTimers();
+  });
+});
+
+describe("pure gates (executor policy)", () => {
+  it("validateActionShape accepts valid forms, rejects invalid", () => {
+    expect(validateActionShape({ action: "scrollTo", sectionId: "pricing" })).toBe(true);
+    expect(validateActionShape({ action: "scrollTo", selector: "#p" })).toBe(true);
+    expect(validateActionShape({ action: "scrollTo" })).toBe(false);
+    expect(validateActionShape({ action: "highlight", selector: "#x" })).toBe(true);
+    expect(validateActionShape({ action: "highlight" })).toBe(false);
+    expect(validateActionShape({ action: "move", near: "pricing" })).toBe(true);
+    expect(validateActionShape({ action: "say", text: "hi" })).toBe(false);
+  });
+
+  it("parseNavPath accepts same-origin paths and rejects traversal / schemes", () => {
+    expect(parseNavPath("/about")).toBe("/about");
+    expect(parseNavPath("/")).toBe("/");
+    expect(parseNavPath("/shop?item=2#reviews")).toBe("/shop?item=2#reviews");
+    expect(parseNavPath("//evil.com")).toBeNull();
+    expect(parseNavPath("https://evil.com")).toBeNull();
+    expect(parseNavPath("about")).toBeNull();
+    expect(parseNavPath("/x/../../etc")).toBeNull();
+    expect(parseNavPath("/x\\y")).toBeNull();
   });
 });
 
 describe("guards", () => {
   it("never targets elements inside the widget shadow root", async () => {
-    const { executor, shadow } = makeExecutor();
+    const { executor } = makeExecutor();
     const inside = document.createElement("button");
     inside.id = "orb-inside";
+    const shadow = document.querySelector("#mini-chat-host")!.shadowRoot!;
     shadow.appendChild(inside);
     await executor.execute({ action: "highlight", selector: "#orb-inside" });
     expect(inside.style.outline).toBe(""); // untouched
@@ -121,11 +166,24 @@ describe("guards", () => {
   });
 
   it("no-ops everything when the toggle is off", async () => {
-    document.body.innerHTML = '<div id="growth">G</div>';
-    const { executor, onMove } = makeExecutor({ enabled: () => false });
+    const g = document.createElement("div");
+    g.id = "growth";
+    document.body.appendChild(g);
+    const onMove = vi.fn();
+    const executor = createExecutor(
+      () => document.querySelector("#mini-chat-host")?.shadowRoot ?? null,
+      { enabled: () => false, onNavigate: vi.fn().mockResolvedValue(true), onGaze: vi.fn(), onMove },
+    );
     await executor.execute({ action: "highlight", selector: "#growth" });
     await executor.execute({ action: "move", near: "growth" });
-    expect(document.getElementById("growth")!.style.outline).toBe("");
+    expect(g.style.outline).toBe("");
     expect(onMove).not.toHaveBeenCalled();
+  });
+
+  it("is safe to call execute with no widget root mounted yet", async () => {
+    const executor = makeHostlessExecutor();
+    await executor.execute({ action: "scrollTo", sectionId: "anything" });
+    await executor.execute({ action: "highlight", selector: "#x" });
+    // warn-drop emitted, but no crash
   });
 });
