@@ -26,9 +26,10 @@ cp server/.env.example server/.env
 npm run dev                  # backend on http://localhost:8787
 ```
 
-Open **http://localhost:8787/demo/index.html** — a multi-section host page with
-the orb embedded. `demo/spa.html` exercises SPA route re-scanning. Chat, watch
-it scroll/highlight, navigate between pages and see the conversation persist.
+Open **http://localhost:8787/demo/index.html** — the home of a **four-page demo
+site** (Home · Pricing · About · Contact): start a chat, then navigate between
+pages and watch the conversation — and the assistant's page awareness — follow
+you. `demo/spa.html` exercises SPA route re-scanning.
 
 ## Embedding on your site
 

@@ -4,6 +4,16 @@ This markdown is injected wholesale into the assistant's system context
 (PLAN.md §3.6). Keep it modest — wholesale injection has a context ceiling
 (RAG/chunking is phase 2).
 
+## Site map
+
+The site is a small multi-page site. When guiding the visitor, `navigate`
+paths must match these exactly:
+
+- `/demo/index.html` — **Home**: hero + what we make (features)
+- `/demo/pricing.html` — **Pricing**: the three plans + a comparison table
+- `/demo/about.html` — **About**: the studio story + values
+- `/demo/contact.html` — **Contact**: email + FAQ
+
 ## What we do
 
 Lotus Creations is a small studio making fast, minimal web experiences.

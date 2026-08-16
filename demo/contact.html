@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Contact — Lotus Creations</title>
+  <meta name="description" content="How to reach Lotus Creations, plus frequently asked questions.">
+  <link rel="stylesheet" href="/demo/demo.css">
+</head>
+<body>
+  <nav class="demo-nav">
+    <span class="brand"><a href="/demo/index.html">Lotus Creations</a></span>
+    <a href="/demo/index.html">Home</a>
+    <a href="/demo/pricing.html">Pricing</a>
+    <a href="/demo/about.html">About</a>
+    <a href="/demo/contact.html" aria-current="page">Contact</a>
+    <span class="spacer"></span>
+    <a href="/demo/spa.html">SPA demo →</a>
+  </nav>
+
+  <main>
+    <section id="contact" aria-label="Contact">
+      <h1>Contact</h1>
+      <p>Email <a href="mailto:hello@lotus-creations.com">hello@lotus-creations.com</a>
+      — we reply within two business days.</p>
+      <p>For plan questions, the orb can walk you through the
+      <a href="/demo/pricing.html">pricing page</a>.</p>
+    </section>
+
+    <section id="faq" aria-label="FAQ">
+      <h2>FAQ</h2>
+      <dl class="faq">
+        <dt>Can I cancel?</dt>
+        <dd>Any time, from the billing page.</dd>
+        <dt>Do you offer refunds?</dt>
+        <dd>Yes — 14 days, no questions asked.</dd>
+        <dt>Does the assistant remember our chat?</dt>
+        <dd>Yes — per browser (localStorage), until you press “clear”.</dd>
+      </dl>
+    </section>
+  </main>
+
+  <footer>Demo site for the mini-chat widget · this page: <code>/demo/contact.html</code></footer>
+
+  <script src="/mini-chat.js"></script>
+  <script>
+    window.MiniChat.init({
+      backendUrl: location.origin,
+      agentId: "demo",
+      title: "Lotus assistant",
+      accentColor: "#6d28d9",
+    });
+  </script>
+</body>
+</html>

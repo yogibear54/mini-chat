@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>About — Lotus Creations</title>
+  <meta name="description" content="About Lotus Creations, a tiny web studio.">
+  <link rel="stylesheet" href="/demo/demo.css">
+</head>
+<body>
+  <nav class="demo-nav">
+    <span class="brand"><a href="/demo/index.html">Lotus Creations</a></span>
+    <a href="/demo/index.html">Home</a>
+    <a href="/demo/pricing.html">Pricing</a>
+    <a href="/demo/about.html" aria-current="page">About</a>
+    <a href="/demo/contact.html">Contact</a>
+    <span class="spacer"></span>
+    <a href="/demo/spa.html">SPA demo →</a>
+  </nav>
+
+  <main>
+    <section id="story" aria-label="Our story">
+      <h1>Our story</h1>
+      <p>Lotus Creations started in 2024 as a weekend project: a floating
+      assistant that actually knew the page it lived on. It grew into a small
+      studio building calm, useful little things for the web.</p>
+      <p>We believe widgets should be <strong>polite</strong>: visible when
+      wanted, out of the way otherwise, and never, ever auto-playing.</p>
+    </section>
+
+    <section id="values" aria-label="Values">
+      <h2>Values</h2>
+      <ul>
+        <li><strong>Calm software.</strong> Motion with a purpose, or none at all.</li>
+        <li><strong>One script tag.</strong> If it takes a build pipeline to host us, we've failed.</li>
+        <li><strong>Honest assistants.</strong> It says “I don't know” instead of inventing.</li>
+      </ul>
+    </section>
+  </main>
+
+  <footer>Demo site for the mini-chat widget · this page: <code>/demo/about.html</code></footer>
+
+  <script src="/mini-chat.js"></script>
+  <script>
+    window.MiniChat.init({
+      backendUrl: location.origin,
+      agentId: "demo",
+      title: "Lotus assistant",
+      accentColor: "#6d28d9",
+    });
+  </script>
+</body>
+</html>

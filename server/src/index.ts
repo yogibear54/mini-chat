@@ -210,7 +210,12 @@ export function createMiniChatServer(overrides: {
   }
 
   function serveDemo(res: ServerResponse, pathname: string) {
-    return serveFile(res, `../../demo/${pathname.replace(/^\/demo\//, "")}`, "text/html; charset=utf-8");
+    const rel = pathname.replace(/^\/demo\//, "");
+    if (!rel || rel.includes("..") || rel.includes("/")) {
+      return res.writeHead(404).end(); // flat dir only — no traversal
+    }
+    const mime = rel.endsWith(".css") ? "text/css" : "text/html; charset=utf-8";
+    return serveFile(res, `../../demo/${rel}`, mime);
   }
 
   // ── misc helpers ─────────────────────────────────────────────────────────
