@@ -105,18 +105,45 @@ Providers live in `server/src/providers/`:
 3. Point `PROVIDER` at it in `.env`.
 
 `fake.ts` is a complete 30-line example (also used by the tests and offline demo).
+Unknown provider names fail loudly with a message that lists the valid options
+(e.g. `unknown provider "OpenRouter" — valid: "openai-compatible" (covers
+OpenAI / OpenRouter / Groq / …) or "fake"`).
 
 ## Development
 
 ```bash
-npm test          # vitest — 61 tests across the six agreed seams
-npm run typecheck # tsc across shared/server/client
-npm run build     # vite IIFE build of the widget
-npm run dev       # backend with tsx watch
+npm test               # vitest — 79 tests across the six agreed seams
+npm run typecheck      # tsc across shared/server/client
+npm run build          # vite IIFE build of the widget
+npm run dev            # backend with tsx watch
+npm run verify:mount   # jsdom: bundle executes, widget mounts in shadow DOM
+npm run verify:e2e     # scripted chat through the real page (21 checks)
 ```
 
 Layout: `shared/types.ts` (wire protocol) · `client/src/*` (widget; React,
-Shadow DOM) · `server/src/*` (proxy; plain Node http, no runtime deps).
+Shadow DOM) · `server/src/*` (proxy; plain Node http, no runtime deps) ·
+`demo/*` (four-page demo) · `scripts/*` (verify scripts).
+
+## Troubleshooting
+
+- **Port 8787 already in use / `EADDRINUSE` on `npm run dev`.** Another instance is
+  still listening. `pkill -f "tsx watch"` (or `fuser -k 8787/tcp`), then
+  `npm run dev` again. The server auto-retries the bind on `EADDRINUSE`, so
+  fast `tsx watch` restarts are usually self-healing now.
+- **`process is not defined` / widget won't mount.** The client bundle was
+  built without `process.env.NODE_ENV` shimmed. Run `npm run build` —
+  `vite.config.ts` defines it.
+- **No LLM responses / 401 from OpenRouter.** `PROVIDER=openai-compatible`
+  with `LLM_BASE_URL=https://openrouter.ai/api/v1` and your key in
+  `LLM_API_KEY`. (`PROVIDER=OpenRouter` won't work — the value selects the
+  *protocol*, not the service; use `LLM_BASE_URL` to pick OpenRouter.)
+- **Action emitted but nothing happens, or raw action JSON in the chat.**
+  The model dropped the `json-action` fence. Try `localStorage.clear()` in
+  the browser and re-ask — stale conversation history is the most common
+  cause (the model "narrates" prior turns that claimed it moved). The system
+  prompt in `server/src/context.ts` includes a bad/good example pair to reduce
+  this. Set `DEBUG_REPLIES=1` in the server env to capture the exact raw
+  reply for diagnosis.
 
 ## Safety notes
 
