@@ -57,6 +57,7 @@ export function resolveNear(near: string): Pos {
     document.getElementById(near) ??
     document.querySelector(near); // treat as selector (guarded upstream)
   if (el) return adjacentTo(el.getBoundingClientRect());
+  console.warn("[mini-chat] move target unresolvable — returning to home corner:", near);
   return cornerPos("bottom-right");
 }
 

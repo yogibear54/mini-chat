@@ -167,12 +167,14 @@ export function createMiniChatServer(overrides: {
       });
       let sawUsage = false;
       let streamedChars = 0;
+      let fullText = ""; // TEMP DEBUG — capture full model reply
       for await (const chunk of provider.stream(
         { system, history: windowHistory(chatReq.history, maxHistory) },
         controller.signal,
       )) {
         if (chunk.type === "token") {
           streamedChars += chunk.value.length;
+          fullText += chunk.value; // TEMP DEBUG
           sessions.fanout(chatReq.sessionId, { type: "token", value: chunk.value });
         } else {
           sawUsage = true; // real spend beats the estimate (§3.2.1)
@@ -180,6 +182,9 @@ export function createMiniChatServer(overrides: {
         }
       }
       if (!sawUsage) budget.recordEstimated("x".repeat(streamedChars)); // estimate only when absent
+      if (process.env.DEBUG_REPLIES) {
+        console.log(`[mini-chat] reply for ${chatReq.sessionId.slice(0, 8)}:\n${fullText}`);
+      }
       sessions.fanout(chatReq.sessionId, { type: "done", requestId });
     } catch (err) {
       if (controller.signal.aborted) return; // last reader left — expected
@@ -253,6 +258,18 @@ export function createMiniChatServer(overrides: {
   }
 
   return new Promise<{ port: number; close: () => Promise<void> }>((resolveStart) => {
+    server.on("error", (err) => {
+      // fast tsx-watch restarts can race the old socket — retry instead of dying
+      if ((err as NodeJS.ErrnoException).code === "EADDRINUSE") {
+        console.error("[mini-chat] port in use — retrying in 1s");
+        setTimeout(() => {
+          server.close();
+          server.listen(overrides.port ?? config.port);
+        }, 1_000);
+      } else {
+        throw err;
+      }
+    });
     server.listen(overrides.port ?? config.port, () => {
       const addr = server.address();
       resolveStart({
