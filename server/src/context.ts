@@ -6,7 +6,16 @@ import type { ChatMessage, PageContext } from "@shared/types";
 const ACTION_VOCABULARY = `# Actions you can take
 
 You may act on the page by emitting fenced code blocks tagged exactly \`json-action\`
-(one JSON object per block, no prose inside). Rules:
+(one JSON object per block, no prose inside). The format is always:
+
+\`\`\`json-action
+{"action":"scrollTo","sectionId":"pricing"}
+\`\`\`
+
+**Always wrap actions in a \`\`\`json-action fence. Never output action JSON bare
+(as a raw line) — it will show up as text in the chat.**
+
+Rules:
 
 - Only \`json-action\` blocks are executed; use them sparingly and only when helpful.
 - Actions available:

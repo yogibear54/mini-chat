@@ -190,14 +190,20 @@ since only the client knows the host page.)
 **Block contract:**
 
 - A block opens with a fence whose info string is exactly `json-action`
-  (a line of three backticks + `json-action`, case-sensitive) and closes at the
+  (case-insensitive; a line of three backticks + `json-action`) and closes at the
   next bare three-backtick line (CommonMark fenced-code rules).
+- **Bare (unfenced) fallback** — models sometimes drop the fence, so a top-level
+  JSON object **outside any code fence** that parses to a valid action is also
+  accepted, executed, and stripped from the prose. Non-action JSON stays as
+  prose. Bare-object scanning is **disabled inside ordinary code fences**
+  (`json`, `js`, …), which are never executed — that remains the safety boundary.
 - **One `Action` object per block**; multiple blocks allowed, executed in
   document order.
 - A block is *complete* when its closing fence arrives → parse then.
-- **Safety boundary:** *only* `json-action`-tagged fences are executed. Every
-  other code fence (plain, or tagged `json`, `js`, …) renders as normal code and
-  is **never** executed.
+- **Safety boundary:** *only* `json-action`-tagged fences (or a bare top-level
+  action object outside any code fence, per the fallback above) are executed.
+  Every other code fence (plain, or tagged `json`, `js`, …) renders as normal
+  code and is **never** executed.
 - Actions fire **on block-complete** (mid-stream, in order), not deferred to
   end-of-message.
 - **Malformed / partial:** invalid JSON or an unclosed fence → discard +

@@ -6,8 +6,9 @@ import type { Action } from "@shared/types";
 // Only fences tagged EXACTLY `json-action` (case-sensitive) are parsed+executed;
 // every other fence is ordinary prose. Malformed/unclosed → discard + warn.
 
-const OPEN_RE = /^ {0,3}```json-action\s*$/;
+const OPEN_RE = /^ {0,3}```json-action\s*$/i; // case-insensitive tag
 const CLOSE_RE = /^ {0,3}```\s*$/;
+const ANY_FENCE_RE = /^ {0,3}```/;
 const ALLOWED: Action["action"][] = ["scrollTo", "highlight", "navigate", "move"];
 
 export interface ScanResult {
@@ -18,27 +19,78 @@ export interface ScanResult {
 export function createActionScanner() {
   let lineBuf = ""; // partial line waiting for \n
   let inside = false; // inside a json-action fence
+  let inCode = false; // inside an ordinary code fence — passthrough, never execute
   let body: string[] = []; // fence body lines
-  let pendingProse: string[] = []; // prose held while inside (usually empty)
+  // bare (unfenced) action-object collection: models sometimes drop the fence
+  let bare: string[] = [];
+  let bareDepth = 0;
+
+  function pushBare(line: string) {
+    bare.push(line);
+    bareDepth += (line.match(/{/g) ?? []).length - (line.match(/}/g) ?? []).length;
+  }
+
+  /** Balanced bare object: valid action → execute; otherwise it's prose. */
+  function resolveBare(out: ScanResult) {
+    const text = bare.join("\n");
+    bare = [];
+    bareDepth = 0;
+    try {
+      const obj = JSON.parse(text);
+      if (validateActionShape(obj)) {
+        out.actions.push(obj as Action);
+        return;
+      }
+    } catch {
+      /* not JSON — ordinary prose */
+    }
+    out.prose += text + "\n";
+  }
+
+  function flushBare(out: ScanResult) {
+    if (bare.length === 0) return;
+    const text = bare.join("\n");
+    bare = [];
+    bareDepth = 0;
+    out.prose += text + "\n"; // unbalanced at end of stream → it was prose
+  }
 
   function finishLine(line: string, out: ScanResult) {
     if (!inside) {
       if (OPEN_RE.test(line)) {
+        flushBare(out);
         inside = true;
         body = [];
-        pendingProse = [];
-      } else {
-        out.prose += line + "\n";
+        return;
       }
+      if (ANY_FENCE_RE.test(line)) {
+        // ordinary code fence: toggle passthrough mode (never execute contents)
+        flushBare(out);
+        inCode = !inCode;
+        out.prose += line + "\n";
+        return;
+      }
+      if (inCode) {
+        out.prose += line + "\n";
+        return;
+      }
+      if (bare.length > 0) {
+        pushBare(line);
+        if (bareDepth <= 0) resolveBare(out);
+        return;
+      }
+      if (line.trimStart().startsWith("{")) {
+        pushBare(line);
+        if (bareDepth <= 0) resolveBare(out);
+        return;
+      }
+      out.prose += line + "\n";
       return;
     }
     if (CLOSE_RE.test(line)) {
       inside = false;
-      const json = body.join("\n");
+      const action = parseAction(body.join("\n"));
       body = [];
-      out.prose += pendingProse.join(""); // held prose (none, kept for clarity)
-      pendingProse = [];
-      const action = parseAction(json);
       if (action) out.actions.push(action);
       return;
     }
@@ -72,10 +124,16 @@ export function createActionScanner() {
     flush(): ScanResult {
       const out: ScanResult = { prose: "", actions: [] };
       if (lineBuf !== "") {
-        if (!inside) out.prose += lineBuf; // partial PROSE line — emit as-is
+        if (!inside && !inCode && (bare.length > 0 || lineBuf.trimStart().startsWith("{"))) {
+          pushBare(lineBuf);
+          if (bareDepth <= 0) resolveBare(out);
+        } else if (!inside) {
+          out.prose += lineBuf; // partial PROSE line — emit as-is, no added \n
+        }
         // else: partial fence BODY — falls through to the discard below
         lineBuf = "";
       }
+      flushBare(out);
       if (inside) {
         console.warn("[mini-chat] discarded unclosed action fence at end of stream");
         inside = false;

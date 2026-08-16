@@ -36,9 +36,15 @@ describe("action scanner — prose passthrough", () => {
     expect(prose).toContain("```json");
   });
 
-  it("does not execute a JSON-ACTION fence (case-sensitive tag)", () => {
-    const { actions } = scan(["```JSON-ACTION\n{\"action\":\"navigate\",\"path\":\"/x\"}\n```\n"]);
+  it("does not execute a plain ```json code fence", () => {
+    const { actions } = scan(["```json\n{\"action\":\"navigate\"}\n```\n"]);
     expect(actions).toEqual([]);
+  });
+
+  it("recognizes a fence tag regardless of case (models vary)", () => {
+    const { actions, prose } = scan(["```Json-Action\n{\"action\":\"move\",\"near\":\"pricing\"}\n```\nTail."]);
+    expect(actions).toEqual([{ action: "move", near: "pricing" }]);
+    expect(prose.trim()).toBe("Tail.");
   });
 });
 
@@ -98,6 +104,52 @@ describe("action scanner — extraction", () => {
     const { actions } = scan(["```json-action\n{\"action\":\"explode\"}\n```\n"]);
     expect(actions).toEqual([]);
     expect(console.warn).toHaveBeenCalled();
+  });
+});
+
+describe("action scanner — bare (unfenced) action fallback", () => {
+  it("executes a bare single-line action object and strips it from prose", () => {
+    const { prose, actions } = scan([
+      "The About page is at /demo/about.html — want to go?\n",
+      '{"action":"navigate","path":"/demo/about.html"}',
+      "\n",
+    ]);
+    expect(actions).toEqual([{ action: "navigate", path: "/demo/about.html" }]);
+    expect(prose.trim()).toBe("The About page is at /demo/about.html — want to go?");
+  });
+
+  it("executes a bare multi-line action object", () => {
+    const { prose, actions } = scan([
+      "Sure —\n{\n",
+      '  "action": "scrollTo",',
+      '\n  "sectionId": "pricing"\n}\n',
+      "There you are.",
+    ]);
+    expect(actions).toEqual([{ action: "scrollTo", sectionId: "pricing" }]);
+    expect(prose.trim()).toBe("Sure —\nThere you are.");
+  });
+
+  it("leaves non-action JSON objects as prose", () => {
+    const { prose, actions } = scan(["Config: {\"debug\": true}\n"]);
+    expect(actions).toEqual([]);
+    expect(prose).toContain('{"debug": true}');
+  });
+
+  it("never executes action JSON inside an ordinary code fence", () => {
+    const { prose, actions } = scan([
+      "Example block:\n```json\n",
+      '{"action":"navigate","path":"/about"}',
+      "\n```\ndone\n",
+    ]);
+    expect(actions).toEqual([]);
+    expect(prose).toContain('{"action":"navigate","path":"/about"}');
+  });
+
+  it("does not mangle prose containing unbalanced braces", () => {
+    const { prose, actions } = scan(["Smile {not json\nstill prose\n"]);
+    expect(actions).toEqual([]);
+    expect(prose).toContain("Smile {not json");
+    expect(prose).toContain("still prose");
   });
 });
 
