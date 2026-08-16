@@ -116,8 +116,9 @@
 }
 .mc-input button:disabled, .mc-input input:disabled { opacity: .45; cursor: default; }
 
-/* highlight action effect (on the host page) */
-[data-mini-highlight] { outline: 3px solid #f0b429; outline-offset: 3px; transition: outline .15s; }
+/* highlight actions apply INLINE styles to host-page elements (they cannot
+   see this shadow stylesheet); the data-mini-highlight attribute stays as an
+   opt-in hook for host-site CSS */
 
 /* reduced motion (§3.8): skip the glide + bob */
 @media (prefers-reduced-motion: reduce) {

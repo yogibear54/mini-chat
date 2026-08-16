@@ -203,11 +203,20 @@ function resolveTarget(
   widgetRoot: ShadowRoot,
   doc: Document,
 ): HTMLElement | null {
-  let els: NodeListOf<Element>;
-  if (ref.sectionId) els = doc.querySelectorAll(`[id="${cssEscape(ref.sectionId)}"]`);
-  else if (ref.selector) els = doc.querySelectorAll(ref.selector);
-  else return null;
-  if (els.length !== 1) return null;
+  let els: NodeListOf<Element> | null = null;
+  if (ref.sectionId) {
+    els = doc.querySelectorAll(`[id="${cssEscape(ref.sectionId)}"]`);
+  } else if (ref.selector) {
+    els = doc.querySelectorAll(ref.selector);
+    // models often drop the '#' — a bare single token is far more likely an
+    // element id than an unknown tag; retry as an id lookup before giving up
+    if (els.length === 0 && /^[A-Za-z][\w-]*$/.test(ref.selector.trim())) {
+      els = doc.querySelectorAll(`[id="${cssEscape(ref.selector.trim())}"]`);
+    }
+  } else {
+    return null;
+  }
+  if (!els || els.length !== 1) return null;
   const el = els[0] as HTMLElement;
   if (!(el instanceof HTMLElement)) return null;
   if (widgetRoot.contains(el)) return null; // never act on ourselves
@@ -245,11 +254,17 @@ export function createExecutor(getWidgetRoot: () => ShadowRoot | null, opts: Exe
         const el = widgetRoot && resolveTarget(action, widgetRoot, document);
         if (!el) return warnDrop(action);
         gaze(el);
-        el.setAttribute("data-mini-highlight", "");
-        setTimeout(
-          () => el.removeAttribute("data-mini-highlight"),
-          action.durationMs ?? 2_000,
-        );
+        // INLINE styles: host-page elements cannot see the widget's shadow-root
+        // stylesheet, so an attribute + shadow CSS would be invisible.
+        const prev = { outline: el.style.outline, offset: el.style.outlineOffset };
+        el.setAttribute("data-mini-highlight", ""); // opt-in hook for host CSS
+        el.style.outline = "3px solid #f0b429";
+        el.style.outlineOffset = "3px";
+        setTimeout(() => {
+          el.style.outline = prev.outline;
+          el.style.outlineOffset = prev.offset;
+          el.removeAttribute("data-mini-highlight");
+        }, action.durationMs ?? 2_000);
         return;
       }
       case "navigate": {

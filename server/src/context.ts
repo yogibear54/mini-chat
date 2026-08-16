@@ -17,6 +17,14 @@ You may act on the page by emitting fenced code blocks tagged exactly \`json-act
 
 Rules:
 
+- **Check the page context first.** Only scroll/highlight/move to sections or
+  elements that exist on the CURRENT page (they appear in the page context's
+  section list). If the thing you want to show lives on a different page,
+  emit a \`navigate\` action to that page instead — never scroll to a section
+  that isn't listed.
+- CSS selectors for ids must include the leading \`#\` (e.g. \`#growth\`).
+- Prefer \`sectionId\` (from the page context) over raw selectors when one fits;
+  selectors must match exactly one element.
 - Only \`json-action\` blocks are executed; use them sparingly and only when helpful.
 - Actions available:
   - {"action":"scrollTo","sectionId":"…"} or {"action":"scrollTo","selector":"…"} — smooth-scroll the user to a section/element
