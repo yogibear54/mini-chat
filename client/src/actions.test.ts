@@ -92,6 +92,17 @@ describe("action scanner — extraction", () => {
     expect(console.warn).toHaveBeenCalled();
   });
 
+  it("closes a fence that ends the stream with NO trailing newline (real model behavior)", () => {
+    // DeepSeek emits exactly this: final fence, no \n after it
+    const { prose, actions } = scan([
+      "Sure — scrolling you there now.\n\n```json-action\n",
+      '{"action":"scrollTo","sectionId":"features"}',
+      "\n```",
+    ]);
+    expect(actions).toEqual([{ action: "scrollTo", sectionId: "features" }]);
+    expect(prose.trim()).toBe("Sure — scrolling you there now.");
+  });
+
   it("discards an unclosed fence at end of stream (+warn)", () => {
     const { prose, actions } = scan(["ok\n```json-action\n{\"action\":\"move\",\"near\":\"x\"}"]);
     expect(actions).toEqual([]);

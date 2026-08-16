@@ -124,13 +124,22 @@ export function createActionScanner() {
     flush(): ScanResult {
       const out: ScanResult = { prose: "", actions: [] };
       if (lineBuf !== "") {
-        if (!inside && !inCode && (bare.length > 0 || lineBuf.trimStart().startsWith("{"))) {
+        if (inside) {
+          // final unterminated line inside a fence: a closing fence still counts
+          // (real models end streams with "```" and no trailing newline)
+          if (CLOSE_RE.test(lineBuf)) {
+            inside = false;
+            const action = parseAction(body.join("\n"));
+            body = [];
+            if (action) out.actions.push(action);
+          }
+          // else: partial fence BODY — discarded below
+        } else if (!inCode && (bare.length > 0 || lineBuf.trimStart().startsWith("{"))) {
           pushBare(lineBuf);
           if (bareDepth <= 0) resolveBare(out);
-        } else if (!inside) {
+        } else {
           out.prose += lineBuf; // partial PROSE line — emit as-is, no added \n
         }
-        // else: partial fence BODY — falls through to the discard below
         lineBuf = "";
       }
       flushBare(out);
