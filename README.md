@@ -80,6 +80,17 @@ See [`server/.env.example`](./server/.env.example). Key knobs:
 - **Page perception**: scans `h1–h3`, `section[id]`, `[data-mini-section]`;
   tracks the current section (middle-band `IntersectionObserver`); re-scans on
   SPA route changes. Sent with every message.
+- **Knowledge base** (factual source of truth — *the* content the LLM answers
+  from). A single markdown file, set via `SOURCE_OF_TRUTH_PATH` (default
+  `server/knowledge/source.md`), is **wholesale-injected** into the system
+  prompt on every turn (see `assembleSystemMessage` in
+  `server/src/context.ts`). Edit that file to teach the assistant — pricing,
+  policies, FAQs, anything you want it to ground its answers in. The LLM is
+  instructed to answer from it rather than invent, and the system prompt also
+  injects the action vocabulary + page context. The file is a regular
+  markdown document; no schema. There's a soft size ceiling (wholesale
+  injection has a context-window cost) — keep it modest, or RAG/chunking is
+  a phase-2 story.
 - **Actions** (LLM-emitted, `json-action` fences parsed client-side, stripped
   from the rendered text): `scrollTo`, `highlight`, `move` (self), `navigate`
   (same-origin only, one-tap confirmation). Free selectors, guarded: must match
