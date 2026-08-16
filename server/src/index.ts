@@ -271,8 +271,13 @@ function clientIp(req: IncomingMessage): string {
 
 // Entry point: `npm run dev` / `npm start`
 if (process.argv[1]?.endsWith("index.ts") || process.argv[1]?.endsWith("index.js")) {
+  const cfg = loadConfig();
   createMiniChatServer().then(({ port }) => {
     console.log(`[mini-chat] backend listening on http://localhost:${port}`);
+    console.log(
+      `[mini-chat] provider=${cfg.provider} model=${cfg.providerConfig.model} ` +
+        `base=${cfg.providerConfig.baseUrl}`,
+    );
     console.log("[mini-chat] demo: http://localhost:8787/demo/index.html (run `npm run build` first)");
   });
 }
