@@ -10,6 +10,7 @@
   "scripts": {
     "test": "vitest run",
     "verify:mount": "node scripts/verify-mount.mjs",
+    "verify:e2e": "node scripts/e2e-demo.mjs",
     "typecheck": "npm -w shared run typecheck && npm -w server run typecheck && npm -w client run typecheck",
     "build": "npm -w client run build",
     "dev": "npm -w server run dev"
