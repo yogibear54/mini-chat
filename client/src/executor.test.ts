@@ -33,7 +33,10 @@ function feedReply(reply: string) {
   return { actions, prose };
 }
 
-function makeExecutor(over: Partial<Parameters<typeof createExecutor>[1]> = {}) {
+function makeExecutor(
+  over: Partial<Parameters<typeof createExecutor>[1]> = {},
+  defaults: Parameters<typeof createExecutor>[2] = {},
+) {
   const host = document.createElement("div");
   host.id = "mini-chat-host";
   const shadow = host.attachShadow({ mode: "open" });
@@ -48,6 +51,7 @@ function makeExecutor(over: Partial<Parameters<typeof createExecutor>[1]> = {}) 
   const executor = createExecutor(
     () => document.querySelector("#mini-chat-host")?.shadowRoot ?? null,
     { enabled: () => true, onNavigate, onGaze, onMove, ...over },
+    defaults,
   );
   return { executor, onNavigate, onGaze, onMove, wrap };
 }
@@ -124,8 +128,48 @@ describe("highlight", () => {
     const { executor } = makeExecutor();
     await executor.execute({ action: "highlight", selector: "#growth" });
     expect(g.style.outline).toContain("solid"); // visible inline
-    vi.advanceTimersByTime(2_100);
+    vi.advanceTimersByTime(5_000);
     expect(g.style.outline).toBe(""); // auto-clears
+    vi.useRealTimers();
+  });
+
+  it("default highlight duration is 4500ms (long enough to read)", async () => {
+    vi.useFakeTimers();
+    const g = document.createElement("div");
+    g.id = "growth";
+    document.body.appendChild(g);
+    const { executor } = makeExecutor();
+    await executor.execute({ action: "highlight", selector: "#growth" });
+    vi.advanceTimersByTime(4_000);
+    expect(g.style.outline).toContain("solid"); // still glowing mid-window
+    vi.advanceTimersByTime(600);
+    expect(g.style.outline).toBe(""); // cleared at ~4500ms
+    vi.useRealTimers();
+  });
+
+  it("the widget can override the default highlight duration at init time", async () => {
+    vi.useFakeTimers();
+    const g = document.createElement("div");
+    g.id = "growth";
+    document.body.appendChild(g);
+    const { executor } = makeExecutor({}, { highlightMs: 10_000 });
+    await executor.execute({ action: "highlight", selector: "#growth" });
+    vi.advanceTimersByTime(4_500);
+    expect(g.style.outline).toContain("solid"); // still glowing past the 4500 default
+    vi.advanceTimersByTime(5_600);
+    expect(g.style.outline).toBe(""); // cleared at the override (10s)
+    vi.useRealTimers();
+  });
+
+  it("the model's durationMs always wins over the default", async () => {
+    vi.useFakeTimers();
+    const g = document.createElement("div");
+    g.id = "growth";
+    document.body.appendChild(g);
+    const { executor } = makeExecutor({}, { highlightMs: 10_000 });
+    await executor.execute({ action: "highlight", selector: "#growth", durationMs: 1_000 });
+    vi.advanceTimersByTime(1_100);
+    expect(g.style.outline).toBe(""); // cleared at the model's 1s
     vi.useRealTimers();
   });
 });

@@ -206,6 +206,13 @@ export interface ExecutorOptions {
   onMove: (near: string) => void; // delegate to the movement engine
 }
 
+/** Defaults the widget can override at init time. */
+export interface ExecutorDefaults {
+  highlightMs: number; // applied when the model doesn't set durationMs
+}
+
+const DEFAULT_HIGHLIGHT_MS = 4500;
+
 /** Resolve a target element: unique match, outside our shadow root, allowed tag. */
 function resolveTarget(
   ref: { sectionId?: string; selector?: string },
@@ -237,7 +244,11 @@ function cssEscape(s: string): string {
   return (window.CSS && CSS.escape) ? CSS.escape(s) : s.replace(/["\\]/g, "\\$&");
 }
 
-export function createExecutor(getWidgetRoot: () => ShadowRoot | null, opts: ExecutorOptions) {
+export function createExecutor(
+  getWidgetRoot: () => ShadowRoot | null,
+  opts: ExecutorOptions,
+  defaults: Partial<ExecutorDefaults> = {},
+) {
   const cap = createRateCap();
   let rateWarned = false;
 
@@ -273,7 +284,7 @@ export function createExecutor(getWidgetRoot: () => ShadowRoot | null, opts: Exe
           el.style.outline = prev.outline;
           el.style.outlineOffset = prev.offset;
           el.removeAttribute("data-mini-highlight");
-        }, action.durationMs ?? 2_000);
+        }, action.durationMs ?? defaults.highlightMs ?? DEFAULT_HIGHLIGHT_MS);
         return;
       }
       case "navigate": {

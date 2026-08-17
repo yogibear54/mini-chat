@@ -54,7 +54,7 @@ Rules:
 - Only \`json-action\` blocks are executed; use them sparingly and only when helpful.
 - Actions available:
   - {"action":"scrollTo","sectionId":"…"} or {"action":"scrollTo","selector":"…"} — smooth-scroll the user to a section/element
-  - {"action":"highlight","selector":"…","durationMs":2000} — briefly outline an element (must match exactly one element)
+  - {"action":"highlight","selector":"…","durationMs":4500} — briefly outline an element (must match exactly one element)
   - {"action":"navigate","path":"/about"} — same-origin navigation only; the user is asked to confirm
   - {"action":"move","near":"pricing"} — move yourself near a sectionId | selector | corner(top-left…) | "x,y"
 - Prefer sectionId when one fits; selectors must match exactly one element.
