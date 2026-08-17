@@ -31,7 +31,7 @@
 
 /* ── panel ── */
 .mc-panel {
-  position: absolute;
+  /* positioning is owned by the wrapper div in widget.tsx (measured + clamped) */
   width: min(360px, calc(100vw - 28px));
   max-height: min(560px, calc(100vh - 100px));
   display: flex;

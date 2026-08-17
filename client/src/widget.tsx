@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import type { Action, ExpressionState, Prefs } from "@shared/types";
 import { ChatPanel } from "./chat-ui";
@@ -113,6 +113,48 @@ function App({ config, greetingText }: { config: WidgetConfig; greetingText: str
   const moveNearRef = useRef(movement.moveNear);
   moveNearRef.current = movement.moveNear;
 
+  // Panel placement: measured + clamped so the panel NEVER leaves the viewport
+  // (with the orb at the bottom, orbY - 80 alone pushed the panel bottom
+  // off-screen). Re-places as the panel grows (streaming) via ResizeObserver.
+  const panelWrapRef = useRef<HTMLDivElement>(null);
+  const [panelPos, setPanelPos] = useState({ left: -9999, top: -9999 });
+  const placePanel = useCallback(() => {
+    const wrap = panelWrapRef.current;
+    if (!wrap) return;
+    const panel = (wrap.querySelector(".mc-panel") ?? wrap) as HTMLElement; // panel carries the real size
+    const MARGIN = 14;
+    const vw = innerWidth;
+    const vh = innerHeight;
+    const w = panel.offsetWidth;
+    const h = panel.offsetHeight;
+    if (w === 0 || h === 0) return; // transiently detached/not laid out — keep last position
+    const left = Math.max(
+      MARGIN,
+      Math.min(
+        movement.pos.x > vw / 2 ? movement.pos.x - w - MARGIN : movement.pos.x + 64 + MARGIN,
+        vw - w - MARGIN,
+      ),
+    );
+    let top = movement.pos.y - 80; // just above the orb's eyeline
+    if (top + h > vh - MARGIN) top = vh - MARGIN - h; // clamp bottom into view
+    if (top < MARGIN) top = MARGIN;
+    setPanelPos({ left, top });
+  }, [movement.pos.x, movement.pos.y]);
+  useLayoutEffect(() => {
+    if (!open) return;
+    placePanel();
+    // late layout safety net: re-place after paint (fonts/flex settle)
+    const raf = requestAnimationFrame(() => requestAnimationFrame(placePanel));
+    const wrap = panelWrapRef.current;
+    if (!wrap || typeof ResizeObserver === "undefined") return () => cancelAnimationFrame(raf);
+    const ro = new ResizeObserver(() => placePanel());
+    ro.observe(wrap);
+    return () => {
+      cancelAnimationFrame(raf);
+      ro.disconnect();
+    };
+  }, [open, placePanel]);
+
   // actions: move is temporary; after "done" the orb returns home (ticket 11)
   const goHomeRef = useRef(movement.goHome);
   goHomeRef.current = movement.goHome;
@@ -202,15 +244,11 @@ function App({ config, greetingText }: { config: WidgetConfig; greetingText: str
       </div>
 
       {open && (
-        <div style={{ position: "absolute", inset: 0 }}>
-          <div
-            style={{
-              position: "absolute",
-              left: panelLeft(movement.pos.x),
-              top: panelTop(movement.pos.y),
-            }}
-          >
-            <ChatPanel
+        <div
+          ref={panelWrapRef}
+          style={{ position: "absolute", left: panelPos.left, top: panelPos.top }}
+        >
+          <ChatPanel
               title={config.title}
               greetingText={greetingText}
               history={chat.history}
@@ -234,21 +272,12 @@ function App({ config, greetingText }: { config: WidgetConfig; greetingText: str
               onClose={() => setOpen(false)}
             />
           </div>
-        </div>
       )}
     </div>
   );
 }
 
 const DONE_RETURN_MS = 2_200;
-
-function panelLeft(orbX: number): string {
-  const vw = innerWidth;
-  return `${Math.max(14, Math.min(orbX > vw / 2 ? orbX - 374 : orbX + 78, vw - 374))}px`;
-}
-function panelTop(orbY: number): string {
-  return `${Math.max(14, orbY - 80)}px`;
-}
 
 // ── mount / init (§9.12) ────────────────────────────────────────────────────
 
