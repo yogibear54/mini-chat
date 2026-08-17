@@ -1,4 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createMiniChatServer } from "./index";
 import type { PageContext } from "@shared/types";
 
@@ -113,6 +116,46 @@ describe("SSE + chat happy path", () => {
     const cfg = (await res.json()) as { greetingText: string };
     expect(typeof cfg.greetingText).toBe("string");
     expect(cfg.greetingText.length).toBeGreaterThan(0);
+  });
+});
+
+describe("LLM traffic log (jsonl)", () => {
+  it("records the request payload and the completed response for a turn", async () => {
+    const { dir, path } = { dir: mkdtempSync(join(tmpdir(), "mc-llmlog-")), path: join(mkdtempSync(join(tmpdir(), "mc-llmlog-")), "llm.jsonl") };
+    const srv = await createMiniChatServer({
+      port: 0,
+      allowedOrigins: [ORIGIN],
+      providerName: "fake",
+      rateLimitPerIpPerMin: 30,
+      budgetCapDailyUsd: 5,
+      pricePerMTok: 1,
+      llmLogPath: path,
+    });
+    const b = `http://127.0.0.1:${srv.port}`;
+    const sse = await fetch(`${b}/api/sse?sessionId=log1`, { headers: { Origin: ORIGIN } });
+    await postChat("log1", ORIGIN, b);
+    const r = await readUntilDone(sse);
+    await r.cancel();
+
+    const lines = readFileSync(path, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+    expect(lines).toHaveLength(2);
+    const req = lines[0];
+    expect(req.type).toBe("request");
+    expect(req.sessionId).toBe("log1");
+    expect(req.messages[0].role).toBe("system");
+    expect(req.messages[0].content).toContain("json-action"); // action vocabulary
+    expect(req.messages.at(-1)).toEqual({ role: "user", content: "plans?" });
+    expect(req.pageContext.sections[0].id).toBe("pricing");
+    expect(typeof req.ts).toBe("string");
+    const res = lines[1];
+    expect(res.type).toBe("response");
+    expect(res.status).toBe("done");
+    expect(res.text).toContain("Growth"); // the fake provider's scripted reply
+    expect(res.usage?.completionTokens).toBeGreaterThan(0);
+    expect(res.durationMs).toBeGreaterThanOrEqual(0);
+    expect(res.requestId).toBe(req.requestId); // correlated
+    await srv.close();
+    rmSync(dir, { recursive: true, force: true });
   });
 });
 

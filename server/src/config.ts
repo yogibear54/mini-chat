@@ -42,6 +42,8 @@ export interface Config {
   };
   systemPrompt: string;
   sourceMarkdown: string;
+  llmLogPath: string;
+  llmLogEnabled: boolean;
 }
 
 function env(name: string, fallback = ""): string {
@@ -70,6 +72,8 @@ export function loadConfig(root: string = SERVER_ROOT): Config {
     },
     systemPrompt: readFile(root, systemPromptPath),
     sourceMarkdown: readFile(root, sourcePath),
+    llmLogPath: resolve(root, env("LLM_LOG_PATH", "./logs/llm.jsonl")),
+    llmLogEnabled: env("LLM_LOG_ENABLED", "true") !== "false",
   };
 }
 

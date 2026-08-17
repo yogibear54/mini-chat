@@ -71,6 +71,8 @@ See [`server/.env.example`](./server/.env.example). Key knobs:
 | `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` | any OpenAI-compatible endpoint |
 | `SYSTEM_PROMPT_PATH` / `SOURCE_OF_TRUTH_PATH` | the agent's prompt + knowledge markdown |
 | `GREETING_TEXT` | fallback greeting (client-rendered — no LLM call) |
+| `LLM_LOG_PATH` | JSONL traffic log — every request/response payload (default `./logs/llm.jsonl`) |
+| `LLM_LOG_ENABLED` | set `false` to disable the traffic log |
 
 ## How it behaves
 
@@ -140,6 +142,14 @@ npm run verify:e2e     # scripted chat through the real page (21 checks)
 npm run verify:mobile  # CDP device emulation: portrait/landscape/keyboard (15 checks)
 ```
 
+**LLM traffic log** — every request sent to the provider and every response
+(status/text/usage/duration) is appended as JSONL while the server runs:
+
+```bash
+tail -f server/logs/llm.jsonl                                        # raw stream
+tail -f server/logs/llm.jsonl | jq -r 'select(.type=="response") | .text'   # replies only
+```
+
 Layout: `shared/types.ts` (wire protocol) · `client/src/*` (widget; React,
 Shadow DOM) · `server/src/*` (proxy; plain Node http, no runtime deps) ·
 `demo/*` (four-page demo) · `scripts/*` (verify scripts).
@@ -164,8 +174,8 @@ Shadow DOM) · `server/src/*` (proxy; plain Node http, no runtime deps) ·
   the browser and re-ask — stale conversation history is the most common
   cause (the model "narrates" prior turns that claimed it moved). The system
   prompt in `server/src/context.ts` includes a bad/good example pair to reduce
-  this. Set `DEBUG_REPLIES=1` in the server env to capture the exact raw
-  reply for diagnosis.
+  this. Inspect `server/logs/llm.jsonl` (or `tail -f` it live) to see the
+  exact raw request payload and model reply for any turn.
 
 ## Safety notes
 

@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve as pathResolve } from "node:path";
 import type { ChatRequest, ServerEvent } from "@shared/types";
 import { loadConfig, type Config } from "./config";
+import { createLlmLog, type LlmLog } from "./llm-log";
 import { createProvider } from "./providers/registry";
 import type { ChatProvider } from "./providers/types";
 import { assembleSystemMessage, windowHistory } from "./context";
@@ -28,6 +29,8 @@ export function createMiniChatServer(overrides: {
   maxHistoryMessages?: number;
   systemPrompt?: string;
   sourceMarkdown?: string;
+  llmLogPath?: string | null;
+  llmLogEnabled?: boolean;
 } = {}) {
   const config: Config = loadConfig();
   const allowedOrigins = overrides.allowedOrigins ?? config.allowedOrigins;
@@ -47,6 +50,10 @@ export function createMiniChatServer(overrides: {
   const systemPrompt = overrides.systemPrompt ?? config.systemPrompt;
   const sourceMarkdown = overrides.sourceMarkdown ?? config.sourceMarkdown;
   const greetingText = overrides.greetingText ?? config.greetingText;
+  const llmLog: LlmLog = createLlmLog(
+    overrides.llmLogPath !== undefined ? overrides.llmLogPath : config.llmLogPath,
+    overrides.llmLogEnabled ?? config.llmLogEnabled,
+  );
 
   const sessions = new SessionRegistry();
 
@@ -158,6 +165,7 @@ export function createMiniChatServer(overrides: {
     const requestId = crypto.randomUUID();
     const controller = new AbortController();
     sessions.trackTurn(chatReq.sessionId, controller);
+    const startedAt = Date.now();
 
     try {
       const system = assembleSystemMessage({
@@ -165,30 +173,65 @@ export function createMiniChatServer(overrides: {
         sourceMarkdown,
         pageContext: chatReq.pageContext,
       });
+      const history = windowHistory(chatReq.history, maxHistory);
+      llmLog.write({
+        type: "request",
+        sessionId: chatReq.sessionId,
+        requestId,
+        model: config.providerConfig.model,
+        messages: [{ role: "system", content: system }, ...history],
+        pageContext: chatReq.pageContext,
+      });
       let sawUsage = false;
       let streamedChars = 0;
-      let fullText = ""; // TEMP DEBUG — capture full model reply
-      for await (const chunk of provider.stream(
-        { system, history: windowHistory(chatReq.history, maxHistory) },
-        controller.signal,
-      )) {
+      let fullText = "";
+      let usage: { promptTokens?: number; completionTokens?: number } | undefined;
+      for await (const chunk of provider.stream({ system, history }, controller.signal)) {
         if (chunk.type === "token") {
           streamedChars += chunk.value.length;
-          fullText += chunk.value; // TEMP DEBUG
+          fullText += chunk.value;
           sessions.fanout(chatReq.sessionId, { type: "token", value: chunk.value });
         } else {
           sawUsage = true; // real spend beats the estimate (§3.2.1)
+          usage = { promptTokens: chunk.promptTokens, completionTokens: chunk.completionTokens };
           budget.recordUsage(chunk.promptTokens, chunk.completionTokens);
         }
       }
       if (!sawUsage) budget.recordEstimated("x".repeat(streamedChars)); // estimate only when absent
-      if (process.env.DEBUG_REPLIES) {
-        console.log(`[mini-chat] reply for ${chatReq.sessionId.slice(0, 8)}:\n${fullText}`);
-      }
+      llmLog.write({
+        type: "response",
+        sessionId: chatReq.sessionId,
+        requestId,
+        model: config.providerConfig.model,
+        status: "done",
+        text: fullText,
+        usage: sawUsage ? usage : undefined,
+        durationMs: Date.now() - startedAt,
+      });
       sessions.fanout(chatReq.sessionId, { type: "done", requestId });
     } catch (err) {
-      if (controller.signal.aborted) return; // last reader left — expected
+      if (controller.signal.aborted) {
+        // last reader left — expected; still record the partial turn
+        llmLog.write({
+          type: "response",
+          sessionId: chatReq.sessionId,
+          requestId,
+          model: config.providerConfig.model,
+          status: "aborted",
+          durationMs: Date.now() - startedAt,
+        });
+        return;
+      }
       console.error("[mini-chat] provider error:", err);
+      llmLog.write({
+        type: "response",
+        sessionId: chatReq.sessionId,
+        requestId,
+        model: config.providerConfig.model,
+        status: "error",
+        error: err instanceof Error ? err.message : String(err),
+        durationMs: Date.now() - startedAt,
+      });
       sessions.fanout(chatReq.sessionId, { type: "error", message: "provider error" });
     } finally {
       sessions.untrackTurn(chatReq.sessionId, controller);
@@ -295,6 +338,7 @@ if (process.argv[1]?.endsWith("index.ts") || process.argv[1]?.endsWith("index.js
       `[mini-chat] provider=${cfg.provider} model=${cfg.providerConfig.model} ` +
         `base=${cfg.providerConfig.baseUrl}`,
     );
+    if (cfg.llmLogEnabled) console.log(`[mini-chat] llm log: ${cfg.llmLogPath}`);
     console.log("[mini-chat] demo: http://localhost:8787/demo/index.html (run `npm run build` first)");
   });
 }
