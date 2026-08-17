@@ -124,10 +124,26 @@ function App({ config, greetingText }: { config: WidgetConfig; greetingText: str
     const panel = (wrap.querySelector(".mc-panel") ?? wrap) as HTMLElement; // panel carries the real size
     const MARGIN = 14;
     const vw = innerWidth;
-    const vh = innerHeight;
+    // A4: on mobile the on-screen keyboard shrinks visualViewport, not
+    // innerHeight — measure against the visual viewport when available.
+    const vv = typeof visualViewport !== "undefined" ? visualViewport : null;
+    const vh = Math.min(innerHeight, vv ? vv.height + vv.offsetTop : innerHeight);
     const w = panel.offsetWidth;
     const h = panel.offsetHeight;
     if (w === 0 || h === 0) return; // transiently detached/not laid out — keep last position
+
+    // B5: mobile → bottom sheet: full-width, anchored to the bottom of the
+    // viewport, sitting just above the orb
+    if (vw <= 640) {
+      const left = Math.max(12, (vw - w) / 2);
+      const orbTop = movement.pos.y;
+      let top = orbTop - h - 12;
+      if (top + h > vh - MARGIN) top = vh - MARGIN - h;
+      if (top < MARGIN) top = MARGIN;
+      setPanelPos({ left, top });
+      return;
+    }
+
     const left = Math.max(
       MARGIN,
       Math.min(
@@ -146,12 +162,27 @@ function App({ config, greetingText }: { config: WidgetConfig; greetingText: str
     // late layout safety net: re-place after paint (fonts/flex settle)
     const raf = requestAnimationFrame(() => requestAnimationFrame(placePanel));
     const wrap = panelWrapRef.current;
-    if (!wrap || typeof ResizeObserver === "undefined") return () => cancelAnimationFrame(raf);
-    const ro = new ResizeObserver(() => placePanel());
-    ro.observe(wrap);
+    // A4: keyboard opens → visualViewport resizes/scrolls → re-place
+    const vv = typeof visualViewport !== "undefined" ? visualViewport : null;
+    const onVV = () => placePanel();
+    vv?.addEventListener("resize", onVV);
+    vv?.addEventListener("scroll", onVV);
+    // A6: rotate / browser chrome changes while the panel is open
+    const onWinResize = () => placePanel();
+    addEventListener("resize", onWinResize);
+    addEventListener("orientationchange", onWinResize);
+    let ro: ResizeObserver | undefined;
+    if (wrap && typeof ResizeObserver !== "undefined") {
+      ro = new ResizeObserver(() => placePanel());
+      ro.observe(wrap);
+    }
     return () => {
       cancelAnimationFrame(raf);
-      ro.disconnect();
+      ro?.disconnect();
+      vv?.removeEventListener("resize", onVV);
+      vv?.removeEventListener("scroll", onVV);
+      removeEventListener("resize", onWinResize);
+      removeEventListener("orientationchange", onWinResize);
     };
   }, [open, placePanel]);
 
