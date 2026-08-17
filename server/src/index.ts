@@ -6,7 +6,7 @@ import { loadConfig, type Config } from "./config";
 import { createLlmLog, type LlmLog } from "./llm-log";
 import { createProvider } from "./providers/registry";
 import type { ChatProvider } from "./providers/types";
-import { assembleSystemMessage, windowHistory } from "./context";
+import { assembleSystemMessage, windowHistory, ACTION_TOOLS, toolCallToAction } from "./context";
 import { createRateLimiter, createBudget } from "./ratelimit";
 import { SessionRegistry, type Stream } from "./sessions";
 
@@ -31,6 +31,7 @@ export function createMiniChatServer(overrides: {
   sourceMarkdown?: string;
   llmLogPath?: string | null;
   llmLogEnabled?: boolean;
+  toolsMode?: "auto" | "on" | "off";
 } = {}) {
   const config: Config = loadConfig();
   const allowedOrigins = overrides.allowedOrigins ?? config.allowedOrigins;
@@ -54,6 +55,10 @@ export function createMiniChatServer(overrides: {
     overrides.llmLogPath !== undefined ? overrides.llmLogPath : config.llmLogPath,
     overrides.llmLogEnabled ?? config.llmLogEnabled,
   );
+
+  // Native tool calling: auto (try, fall back to text fences), on, or off.
+  const toolsMode = overrides.toolsMode ?? config.toolsMode;
+  const useTools = toolsMode !== "off"; // "on" forces tools; provider falls back
 
   const sessions = new SessionRegistry();
 
@@ -166,12 +171,18 @@ export function createMiniChatServer(overrides: {
     const controller = new AbortController();
     sessions.trackTurn(chatReq.sessionId, controller);
     const startedAt = Date.now();
+    let fullText = "";
+    let fullReasoning = "";
+    let streamedChars = 0;
+    let sawUsage = false;
+    let usage: { promptTokens?: number; completionTokens?: number } | undefined;
 
     try {
       const system = assembleSystemMessage({
         systemPrompt,
         sourceMarkdown,
         pageContext: chatReq.pageContext,
+        tools: useTools,
       });
       const history = windowHistory(chatReq.history, maxHistory);
       llmLog.write({
@@ -181,20 +192,81 @@ export function createMiniChatServer(overrides: {
         model: config.providerConfig.model,
         messages: [{ role: "system", content: system }, ...history],
         pageContext: chatReq.pageContext,
+        ...(useTools ? { tools: "native" } : { tools: "text-fences" }),
       });
-      let sawUsage = false;
-      let streamedChars = 0;
-      let fullText = "";
-      let usage: { promptTokens?: number; completionTokens?: number } | undefined;
-      for await (const chunk of provider.stream({ system, history }, controller.signal)) {
+      let toolActions: { tool?: string; id?: string; action: Record<string, unknown> }[] = [];
+      let holdOpen = false; // a think-tag split across token chunks
+      const emitToolCall = (chunk: { id?: string; name?: string; arguments: Record<string, unknown> }) => {
+        // Native tool call → translate to the client's fence format and
+        // stream it as tokens (client scanner/executor unchanged).
+        const action = toolCallToAction(chunk.name, chunk.arguments);
+        if (!action) {
+          console.warn("[mini-chat] unknown tool call ignored:", chunk.name);
+          return;
+        }
+        const fence = `\n\n\`\`\`json-action\n${JSON.stringify(action)}\n\`\`\`\n`;
+        streamedChars += fence.length;
+        fullText += fence;
+        toolActions.push({ tool: chunk.name, id: chunk.id, action });
+        sessions.fanout(chatReq.sessionId, { type: "token", value: fence });
+      };
+      for await (const chunk of provider.stream(
+        { system, history, tools: useTools ? ACTION_TOOLS : undefined },
+        controller.signal,
+      )) {
         if (chunk.type === "token") {
-          streamedChars += chunk.value.length;
-          fullText += chunk.value;
-          sessions.fanout(chatReq.sessionId, { type: "token", value: chunk.value });
-        } else {
+          let value = chunk.value;
+          // reasoning models sometimes leak think-tags INTO content (not the
+          // reasoning field) — strip any complete think-tag anywhere (incl.
+          // namespaced tags like </mm:think>)
+          value = value.replace(/<\/?[a-zA-Z0-9_:-]*think>/g, "");
+          // tag split across chunks: if the previous chunk ended mid-tag, the
+          // current chunk likely begins with the closing `>` — drop up to it
+          if (holdOpen) {
+            value = value.replace(/^[^<]*>/, "");
+            holdOpen = false;
+          }
+          // if THIS chunk still ends mid-tag, remember it (so the next chunk
+          // knows) and drop the partial so it doesn't leak into the chat
+          if (/<[^>]*$/.test(value)) {
+            holdOpen = true;
+            value = value.replace(/<[^>]*$/, "");
+          }
+          if (!value) continue;
+          streamedChars += value.length;
+          fullText += value;
+          sessions.fanout(chatReq.sessionId, { type: "token", value });
+        } else if (chunk.type === "reasoning") {
+          fullReasoning += chunk.value; // captured for the log only, never streamed
+        } else if (chunk.type === "toolCall") {
+          emitToolCall(chunk);
+        } else if (chunk.type === "usage") {
           sawUsage = true; // real spend beats the estimate (§3.2.1)
           usage = { promptTokens: chunk.promptTokens, completionTokens: chunk.completionTokens };
           budget.recordUsage(chunk.promptTokens, chunk.completionTokens);
+        }
+      }
+      // RELIABILITY NET: with tools active, models sometimes narrate an action
+      // ("Highlighting the Starter plan for you.") or claim they already did it
+      // ("Just flagged it above") without calling the tool — flaky backends plus
+      // few-shot self-imitation from narrated history. Trigger on EITHER the
+      // user's message requesting an action OR the reply narrating one; re-ask
+      // ONCE with tool_choice forced and emit ONLY the resulting fence.
+      const NARRATION_RE = /\b(?:scroll|highlight|navigat|mov|tak|head|bring|jump|show)\w*(?:\s+\w+){0,3}?\s+(?:you\s+)?(?:to|over|next|near|beside|under|down|up|there|the|this|that)\b/i;
+      const USER_ACTION_RE = /\b(scroll|highlight|navigate|take me|bring me|go to|jump to|move|show me|point (?:at|to))\b/i;
+      const lastUser = [...chatReq.history].reverse().find((m) => m.role === "user");
+      const wantsAction = lastUser ? USER_ACTION_RE.test(lastUser.content) : false;
+      if (useTools && toolActions.length === 0 && (wantsAction || NARRATION_RE.test(fullText)) && !controller.signal.aborted) {
+        try {
+          for await (const chunk of provider.stream(
+            { system, history, tools: ACTION_TOOLS, toolChoice: "required" },
+            controller.signal,
+          )) {
+            if (chunk.type === "toolCall") emitToolCall(chunk);
+            // tokens/reasoning from the retry are intentionally discarded
+          }
+        } catch {
+          /* best-effort: forced choice unsupported or second failure — give up silently */
         }
       }
       if (!sawUsage) budget.recordEstimated("x".repeat(streamedChars)); // estimate only when absent
@@ -205,9 +277,13 @@ export function createMiniChatServer(overrides: {
         model: config.providerConfig.model,
         status: "done",
         text: fullText,
+        ...(fullReasoning ? { reasoning: fullReasoning } : {}),
+        ...(toolActions.length ? { toolActions } : {}),
         usage: sawUsage ? usage : undefined,
         durationMs: Date.now() - startedAt,
       });
+      // emit `done` once, after any narration retry — client finalizes the
+      // synthetic fences the retry may have appended.
       sessions.fanout(chatReq.sessionId, { type: "done", requestId });
     } catch (err) {
       if (controller.signal.aborted) {
@@ -218,6 +294,8 @@ export function createMiniChatServer(overrides: {
           requestId,
           model: config.providerConfig.model,
           status: "aborted",
+          ...(fullText ? { text: fullText } : {}),
+          ...(fullReasoning ? { reasoning: fullReasoning } : {}),
           durationMs: Date.now() - startedAt,
         });
         return;

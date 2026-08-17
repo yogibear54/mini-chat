@@ -133,13 +133,21 @@ function App({ config, greetingText }: { config: WidgetConfig; greetingText: str
     if (w === 0 || h === 0) return; // transiently detached/not laid out — keep last position
 
     // B5: mobile → bottom sheet: full-width, anchored to the bottom of the
-    // viewport, sitting just above the orb
+    // viewport. Try to sit just above the orb, but if the orb is too high for
+    // the panel to fit above it (e.g. orb parked at the top), anchor the
+    // sheet to the viewport bottom so the orb stays visible above it.
+    // (Without this the final top<MARGIN clamp would slide the panel up over
+    // the orb, hiding it.)
     if (vw <= 640) {
       const left = Math.max(12, (vw - w) / 2);
       const orbTop = movement.pos.y;
       let top = orbTop - h - 12;
-      if (top + h > vh - MARGIN) top = vh - MARGIN - h;
-      if (top < MARGIN) top = MARGIN;
+      if (top < MARGIN) {
+        // orb too high to fit the panel above it → anchor to bottom
+        top = vh - MARGIN - h;
+      } else if (top + h > vh - MARGIN) {
+        top = vh - MARGIN - h;
+      }
       setPanelPos({ left, top });
       return;
     }
