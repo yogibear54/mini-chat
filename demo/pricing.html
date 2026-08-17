@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pricing — Lotus Creations</title>
+  <meta name="description" content="Plans and pricing for Lotus Creations: Starter, Growth, and Scale.">
+  <link rel="stylesheet" href="/demo/demo.css">
+</head>
+<body>
+  <nav class="demo-nav">
+    <span class="brand"><a href="/demo/index.html">Lotus Creations</a></span>
+    <a href="/demo/index.html">Home</a>
+    <a href="/demo/pricing.html" aria-current="page">Pricing</a>
+    <a href="/demo/about.html">About</a>
+    <a href="/demo/contact.html">Contact</a>
+    <span class="spacer"></span>
+    <a href="/demo/spa.html">SPA demo →</a>
+  </nav>
+  <p class="demo-note">You navigated to a new page — if you were chatting, the history is still there.</p>
+
+  <main>
+    <section id="pricing" aria-label="Pricing">
+      <h1>Pricing</h1>
+      <p>Three simple plans. Try asking the orb <em>“which plan should I pick?”</em></p>
+      <div class="plans">
+        <div class="plan" id="starter">
+          <h3>Starter</h3>
+          <p class="price">$0<span style="font-size:.9rem;color:#777">/mo</span></p>
+          <ul>
+            <li>1 project</li>
+            <li>Community support</li>
+            <li>For trying things out</li>
+          </ul>
+        </div>
+        <div class="plan" id="growth">
+          <h3>Growth</h3>
+          <p class="price">$5<span style="font-size:.9rem;color:#777">/mo</span></p>
+          <ul>
+            <li>10 projects</li>
+            <li>Custom domain</li>
+            <li>Email support</li>
+          </ul>
+        </div>
+        <div class="plan" id="scale">
+          <h3>Scale</h3>
+          <p class="price">$20<span style="font-size:.9rem;color:#777">/mo</span></p>
+          <ul>
+            <li>Unlimited projects</li>
+            <li>Priority support</li>
+            <li>Dedicated assistant</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="comparison" aria-label="Compare plans">
+      <h2>Compare plans</h2>
+      <table>
+        <thead>
+          <tr><th></th><th>Starter</th><th>Growth</th><th>Scale</th></tr>
+        </thead>
+        <tbody>
+          <tr><th>Projects</th><td>1</td><td>10</td><td>Unlimited</td></tr>
+          <tr><th>Custom domain</th><td class="no"></td><td class="yes"></td><td class="yes"></td></tr>
+          <tr><th>Email support</th><td class="no"></td><td class="yes"></td><td class="yes"></td></tr>
+          <tr><th>Priority support</th><td class="no"></td><td class="no"></td><td class="yes"></td></tr>
+        </tbody>
+      </table>
+    </section>
+  </main>
+
+  <footer>Demo site for the mini-chat widget · this page: <code>/demo/pricing.html</code></footer>
+
+  <script src="/mini-chat.js"></script>
+  <script>
+    window.MiniChat.init({
+      backendUrl: location.origin,
+      agentId: "demo",
+      title: "Lotus assistant",
+      accentColor: "#6d28d9",
+    });
+  </script>
+</body>
+</html>

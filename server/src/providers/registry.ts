@@ -16,7 +16,14 @@ export function registerProvider(name: string, factory: Factory): void {
 }
 
 export function createProvider(name: string, cfg: Record<string, unknown>): ChatProvider {
-  const factory = registry.get(name);
-  if (!factory) throw new Error(`unknown provider "${name}"`);
+  const key = name.trim().toLowerCase();
+  const factory = registry.get(key);
+  if (!factory) {
+    throw new Error(
+      `unknown provider "${name}" (PROVIDER env) — valid: "openai-compatible" ` +
+        `(covers OpenAI / OpenRouter / Groq / any OpenAI-style API — set the service via LLM_BASE_URL) ` +
+        `or "fake" (offline demo)`,
+    );
+  }
   return factory(cfg);
 }

@@ -26,9 +26,10 @@ cp server/.env.example server/.env
 npm run dev                  # backend on http://localhost:8787
 ```
 
-Open **http://localhost:8787/demo/index.html** — a multi-section host page with
-the orb embedded. `demo/spa.html` exercises SPA route re-scanning. Chat, watch
-it scroll/highlight, navigate between pages and see the conversation persist.
+Open **http://localhost:8787/demo/index.html** — the home of a **four-page demo
+site** (Home · Pricing · About · Contact): start a chat, then navigate between
+pages and watch the conversation — and the assistant's page awareness — follow
+you. `demo/spa.html` exercises SPA route re-scanning.
 
 ## Embedding on your site
 
@@ -70,6 +71,8 @@ See [`server/.env.example`](./server/.env.example). Key knobs:
 | `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` | any OpenAI-compatible endpoint |
 | `SYSTEM_PROMPT_PATH` / `SOURCE_OF_TRUTH_PATH` | the agent's prompt + knowledge markdown |
 | `GREETING_TEXT` | fallback greeting (client-rendered — no LLM call) |
+| `LLM_LOG_PATH` | JSONL traffic log — every request/response payload (default `./logs/llm.jsonl`) |
+| `LLM_LOG_ENABLED` | set `false` to disable the traffic log |
 
 ## How it behaves
 
@@ -79,6 +82,17 @@ See [`server/.env.example`](./server/.env.example). Key knobs:
 - **Page perception**: scans `h1–h3`, `section[id]`, `[data-mini-section]`;
   tracks the current section (middle-band `IntersectionObserver`); re-scans on
   SPA route changes. Sent with every message.
+- **Knowledge base** (factual source of truth — *the* content the LLM answers
+  from). A single markdown file, set via `SOURCE_OF_TRUTH_PATH` (default
+  `server/knowledge/source.md`), is **wholesale-injected** into the system
+  prompt on every turn (see `assembleSystemMessage` in
+  `server/src/context.ts`). Edit that file to teach the assistant — pricing,
+  policies, FAQs, anything you want it to ground its answers in. The LLM is
+  instructed to answer from it rather than invent, and the system prompt also
+  injects the action vocabulary + page context. The file is a regular
+  markdown document; no schema. There's a soft size ceiling (wholesale
+  injection has a context-window cost) — keep it modest, or RAG/chunking is
+  a phase-2 story.
 - **Actions** (LLM-emitted, `json-action` fences parsed client-side, stripped
   from the rendered text): `scrollTo`, `highlight`, `move` (self), `navigate`
   (same-origin only, one-tap confirmation). Free selectors, guarded: must match
@@ -104,18 +118,64 @@ Providers live in `server/src/providers/`:
 3. Point `PROVIDER` at it in `.env`.
 
 `fake.ts` is a complete 30-line example (also used by the tests and offline demo).
+Unknown provider names fail loudly with a message that lists the valid options
+(e.g. `unknown provider "OpenRouter" — valid: "openai-compatible" (covers
+OpenAI / OpenRouter / Groq / …) or "fake"`).
 
 ## Development
 
 ```bash
-npm test          # vitest — 61 tests across the six agreed seams
-npm run typecheck # tsc across shared/server/client
-npm run build     # vite IIFE build of the widget
-npm run dev       # backend with tsx watch
+npm test               # vitest — 82 tests across the six agreed seams
+npm run typecheck      # tsc across shared/server/client
+npm run build          # vite IIFE build of the widget
+npm run dev            # backend with tsx watch (foreground, auto-reload)
+
+# background server control (kills tsx supervisors properly, scoped to this repo)
+npm start              # start in the background (log: /tmp/mini-chat-server.log)
+npm stop               # stop — port + tsx watch supervisors, never other projects'
+npm run restart        # stop + start (e.g. after editing server/.env)
+npm run status         # UP/DOWN + pid
+
+# verification suites
+npm run verify:mount   # jsdom: bundle executes, widget mounts in shadow DOM
+npm run verify:e2e     # scripted chat through the real page (21 checks)
+npm run verify:mobile  # CDP device emulation: portrait/landscape/keyboard (15 checks)
+```
+
+**LLM traffic log** — every request sent to the provider and every response
+(status/text/usage/duration) is appended as JSONL while the server runs:
+
+```bash
+tail -f server/logs/llm.jsonl                                        # raw stream
+tail -f server/logs/llm.jsonl | jq -r 'select(.type=="response") | .text'   # replies only
 ```
 
 Layout: `shared/types.ts` (wire protocol) · `client/src/*` (widget; React,
-Shadow DOM) · `server/src/*` (proxy; plain Node http, no runtime deps).
+Shadow DOM) · `server/src/*` (proxy; plain Node http, no runtime deps) ·
+`demo/*` (four-page demo) · `scripts/*` (verify scripts).
+
+## Troubleshooting
+
+- **Port 8787 already in use / `EADDRINUSE` on `npm run dev`.** Another instance is
+  still listening — `npm stop` clears it (including `tsx watch` supervisors), or
+  `fuser -k 8787/tcp` by hand. The server also auto-retries the bind on
+  `EADDRINUSE`, so fast `tsx watch` restarts are usually self-healing now.
+  Remember `.env` edits need a restart (`npm run restart`) — `tsx watch` only
+  watches source files.
+- **`process is not defined` / widget won't mount.** The client bundle was
+  built without `process.env.NODE_ENV` shimmed. Run `npm run build` —
+  `vite.config.ts` defines it.
+- **No LLM responses / 401 from OpenRouter.** `PROVIDER=openai-compatible`
+  with `LLM_BASE_URL=https://openrouter.ai/api/v1` and your key in
+  `LLM_API_KEY`. (`PROVIDER=OpenRouter` won't work — the value selects the
+  *protocol*, not the service; use `LLM_BASE_URL` to pick OpenRouter.)
+- **Action emitted but nothing happens, or raw action JSON in the chat.**
+  The model dropped the `json-action` fence. Try `localStorage.clear()` in
+  the browser and re-ask — stale conversation history is the most common
+  cause (the model "narrates" prior turns that claimed it moved). The system
+  prompt in `server/src/context.ts` includes a bad/good example pair to reduce
+  this. Inspect `server/logs/llm.jsonl` (or `tail -f` it live) to see the
+  exact raw request payload and model reply for any turn.
 
 ## Safety notes
 

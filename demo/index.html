@@ -3,64 +3,54 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Lotus Creations — Demo (multi-page style)</title>
-  <meta name="description" content="A demo host page for the mini-chat widget: multi-section marketing page.">
-  <style>
-    body { font: 16px/1.6 -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; color: #222; }
-    section { min-height: 90vh; padding: 3rem max(1.5rem, calc(50% - 34rem)); border-bottom: 1px solid #eee; }
-    h1, h2 { font-weight: 700; }
-    .hero { background: #f5f3ff; }
-    .plans { display: flex; gap: 1rem; flex-wrap: wrap; }
-    .plan { border: 1px solid #ddd; border-radius: 12px; padding: 1rem 1.4rem; min-width: 12rem; }
-    nav a { margin-right: 1rem; }
-  </style>
+  <title>Lotus Creations — Home</title>
+  <meta name="description" content="Lotus Creations makes small, beautiful things for the web. Home page of the mini-chat demo site.">
+  <link rel="stylesheet" href="/demo/demo.css">
 </head>
 <body>
-  <nav style="padding:1rem 1.5rem;border-bottom:1px solid #eee">
-    <a href="#hero">Home</a>
-    <a href="#features">Features</a>
-    <a href="#pricing">Pricing</a>
-    <a href="#about">About</a>
-    <a href="spa.html">SPA demo →</a>
+  <nav class="demo-nav">
+    <span class="brand">Lotus Creations</span>
+    <a href="/demo/index.html" aria-current="page">Home</a>
+    <a href="/demo/pricing.html">Pricing</a>
+    <a href="/demo/about.html">About</a>
+    <a href="/demo/contact.html">Contact</a>
+    <span class="spacer"></span>
+    <a href="/demo/spa.html">SPA demo →</a>
   </nav>
+  <p class="demo-note">Multi-page demo — start a chat with the orb, then navigate to another page: the conversation follows you.</p>
 
-  <section id="hero" class="hero" aria-label="Welcome">
-    <h1>Lotus Creations</h1>
-    <p>We make small, beautiful things for the web. Ask the orb in the corner anything about this site.</p>
-  </section>
+  <main>
+    <section id="hero" class="hero" aria-label="Welcome">
+      <h1>Small, beautiful things for the web</h1>
+      <p>Lotus Creations is a tiny studio. We build fast, minimal sites and
+      little interactive creatures — like the assistant floating in the corner
+      of this page.</p>
+      <p><a href="/demo/pricing.html">See pricing →</a></p>
+    </section>
 
-  <section id="features" aria-label="Features">
-    <h2>Features</h2>
-    <ul>
-      <li>Drop-in widget — one script tag</li>
-      <li>Knows which section you're reading</li>
-      <li>Can scroll/highlight/navigate for you</li>
-    </ul>
-  </section>
+    <section id="features" aria-label="Features">
+      <h2>What we make</h2>
+      <ul>
+        <li><strong>Drop-in widgets</strong> — one script tag, zero host dependencies.</li>
+        <li><strong>Page-aware assistants</strong> — the orb knows which section you're reading.</li>
+        <li><strong>Helpful actions</strong> — it can scroll, highlight, and guide you around.</li>
+      </ul>
+      <p>Curious how it works? Ask the orb something like
+      <em>“what can you do?”</em> or <em>“take me to the Growth plan”</em>.</p>
+    </section>
+  </main>
 
-  <section id="pricing" aria-label="Pricing">
-    <h2>Pricing</h2>
-    <div class="plans">
-      <div class="plan" id="starter"><h3>Starter</h3><p>$0/mo — for trying things</p></div>
-      <div class="plan" id="growth"><h3>Growth</h3><p>$5/mo — the popular one</p></div>
-      <div class="plan" id="scale"><h3>Scale</h3><p>$20/mo — for busy sites</p></div>
-    </div>
-  </section>
+  <footer>Demo site for the mini-chat widget · this page: <code>/demo/index.html</code></footer>
 
-  <section id="about" aria-label="About">
-    <h2>About</h2>
-    <p>A tiny studio. The assistant's knowledge comes from a markdown file on the server.</p>
-    <p><a href="index.html">Back to top</a></p>
-  </section>
-
-  <!-- the whole embed: one script tag -->
-  <script src="/mini-chat.js"
-          data-backend-url=""
-          data-title="Lotus assistant"
-          data-accent="#6d28d9"></script>
+  <!-- the entire embed -->
+  <script src="/mini-chat.js"></script>
   <script>
-    // same-origin demo: the widget is served from this backend too
-    window.MiniChat.init({ backendUrl: location.origin, agentId: "demo" });
+    window.MiniChat.init({
+      backendUrl: location.origin,
+      agentId: "demo",
+      title: "Lotus assistant",
+      accentColor: "#6d28d9",
+    });
   </script>
 </body>
 </html>

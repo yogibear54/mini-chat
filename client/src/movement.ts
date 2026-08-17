@@ -28,13 +28,39 @@ function cornerPos(corner: string): Pos {
   const vw = innerWidth;
   const vh = innerHeight;
   const s = orbSize();
+  // A5: keep the orb out from under the home indicator / notch
+  const sb = safeInset("bottom");
+  const sr = safeInset("right");
   const base: Record<string, Pos> = {
     "top-left": { x: MARGIN, y: MARGIN },
     "top-right": { x: vw - s - MARGIN, y: MARGIN },
-    "bottom-left": { x: MARGIN, y: vh - s - MARGIN },
-    "bottom-right": { x: vw - s - MARGIN, y: vh - s - MARGIN },
+    "bottom-left": { x: MARGIN, y: vh - s - MARGIN - sb },
+    "bottom-right": { x: vw - s - MARGIN - sr, y: vh - s - MARGIN - sb },
   };
   return base[corner] ?? base["bottom-right"];
+}
+
+function safeInset(side: "bottom" | "right" | "top" | "left"): number {
+  // env(safe-area-inset-*) is only readable via CSS — measure it with a probe.
+  // No cache: insets swap on rotation, and this is called only on init/resize.
+  try {
+    const probe = document.createElement("div");
+    probe.style.cssText =
+      "position:fixed;top:-100px;visibility:hidden;pointer-events:none;" +
+      "padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);";
+    document.body.appendChild(probe);
+    const cs = getComputedStyle(probe);
+    const map: Record<string, number> = {
+      top: parseFloat(cs.paddingTop) || 0,
+      right: parseFloat(cs.paddingRight) || 0,
+      bottom: parseFloat(cs.paddingBottom) || 0,
+      left: parseFloat(cs.paddingLeft) || 0,
+    };
+    probe.remove();
+    return map[side] || 0;
+  } catch {
+    return 0; // not in a browser (tests)
+  }
 }
 
 /** Adjacent, not overlapping: below if there's room, else above. */
@@ -57,6 +83,7 @@ export function resolveNear(near: string): Pos {
     document.getElementById(near) ??
     document.querySelector(near); // treat as selector (guarded upstream)
   if (el) return adjacentTo(el.getBoundingClientRect());
+  console.warn("[mini-chat] move target unresolvable — returning to home corner:", near);
   return cornerPos("bottom-right");
 }
 

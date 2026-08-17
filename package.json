@@ -10,9 +10,15 @@
   "scripts": {
     "test": "vitest run",
     "verify:mount": "node scripts/verify-mount.mjs",
+    "verify:e2e": "node scripts/e2e-demo.mjs",
+    "verify:mobile": "node scripts/verify-mobile.mjs",
     "typecheck": "npm -w shared run typecheck && npm -w server run typecheck && npm -w client run typecheck",
     "build": "npm -w client run build",
-    "dev": "npm -w server run dev"
+    "dev": "npm -w server run dev",
+    "start": "node scripts/serverctl.mjs start",
+    "stop": "node scripts/serverctl.mjs stop",
+    "restart": "node scripts/serverctl.mjs restart",
+    "status": "node scripts/serverctl.mjs status"
   },
   "devDependencies": {
     "jsdom": "^24.1.3",
