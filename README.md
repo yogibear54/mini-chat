@@ -123,12 +123,21 @@ OpenAI / OpenRouter / Groq / …) or "fake"`).
 ## Development
 
 ```bash
-npm test               # vitest — 79 tests across the six agreed seams
+npm test               # vitest — 82 tests across the six agreed seams
 npm run typecheck      # tsc across shared/server/client
 npm run build          # vite IIFE build of the widget
-npm run dev            # backend with tsx watch
+npm run dev            # backend with tsx watch (foreground, auto-reload)
+
+# background server control (kills tsx supervisors properly, scoped to this repo)
+npm start              # start in the background (log: /tmp/mini-chat-server.log)
+npm stop               # stop — port + tsx watch supervisors, never other projects'
+npm run restart        # stop + start (e.g. after editing server/.env)
+npm run status         # UP/DOWN + pid
+
+# verification suites
 npm run verify:mount   # jsdom: bundle executes, widget mounts in shadow DOM
 npm run verify:e2e     # scripted chat through the real page (21 checks)
+npm run verify:mobile  # CDP device emulation: portrait/landscape/keyboard (15 checks)
 ```
 
 Layout: `shared/types.ts` (wire protocol) · `client/src/*` (widget; React,
@@ -138,9 +147,11 @@ Shadow DOM) · `server/src/*` (proxy; plain Node http, no runtime deps) ·
 ## Troubleshooting
 
 - **Port 8787 already in use / `EADDRINUSE` on `npm run dev`.** Another instance is
-  still listening. `pkill -f "tsx watch"` (or `fuser -k 8787/tcp`), then
-  `npm run dev` again. The server auto-retries the bind on `EADDRINUSE`, so
-  fast `tsx watch` restarts are usually self-healing now.
+  still listening — `npm stop` clears it (including `tsx watch` supervisors), or
+  `fuser -k 8787/tcp` by hand. The server also auto-retries the bind on
+  `EADDRINUSE`, so fast `tsx watch` restarts are usually self-healing now.
+  Remember `.env` edits need a restart (`npm run restart`) — `tsx watch` only
+  watches source files.
 - **`process is not defined` / widget won't mount.** The client bundle was
   built without `process.env.NODE_ENV` shimmed. Run `npm run build` —
   `vite.config.ts` defines it.
