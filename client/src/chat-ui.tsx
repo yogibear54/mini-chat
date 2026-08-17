@@ -56,6 +56,25 @@ export function ChatPanel(props: {
   } = props;
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Auto-scroll the message window to the bottom on new content — but only
+  // if the user was already at (or near) the bottom BEFORE this update. If
+  // they scrolled up to read history, leave them alone. We track "was at
+  // bottom" via an onScroll ref because by the time the effect runs (after
+  // commit), scrollHeight has already grown and the naive distFromBottom
+  // check would always drift past the threshold.
+  const messagesRef = useRef<HTMLDivElement>(null);
+  const wasAtBottom = useRef(true);
+  useEffect(() => {
+    const el = messagesRef.current;
+    if (!el || !wasAtBottom.current) return;
+    el.scrollTop = el.scrollHeight;
+  }, [history, streamText]);
+  const onMessagesScroll = () => {
+    const el = messagesRef.current;
+    if (!el) return;
+    wasAtBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+  };
+
   // focus management: panel opens → the user can type immediately (§3.8)
   useEffect(() => {
     inputRef.current?.focus();
@@ -80,7 +99,7 @@ export function ChatPanel(props: {
         </div>
       </header>
 
-      <div className="mc-messages" aria-live="polite" aria-relevant="additions">
+      <div className="mc-messages" aria-live="polite" aria-relevant="additions" ref={messagesRef} onScroll={onMessagesScroll}>
         {history.length === 0 && !streamText && (
           <div className="mc-msg mc-assistant"><Markdown>{greetingText}</Markdown></div>
         )}
